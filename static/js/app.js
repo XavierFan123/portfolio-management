@@ -227,75 +227,19 @@ class PortfolioApp {
     }
 
     setupCharts() {
-        // Performance Chart
-        const perfCtx = document.getElementById('performance-chart');
-        if (perfCtx) {
-            this.charts.performance = new Chart(perfCtx, {
-                type: 'line',
-                data: {
-                    labels: this.generateTimeLabels(30),
-                    datasets: [{
-                        label: 'Portfolio Value',
-                        data: this.generateRandomData(30, 120000, 130000),
-                        borderColor: '#2563eb',
-                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    aspectRatio: 2,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: false,
-                            ticks: {
-                                callback: function(value) {
-                                    return '$' + value.toLocaleString();
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
+        // 1. Options Greeks Overview Chart
+        this.setupGreeksOverviewChart();
 
-        // Risk Chart
-        const riskCtx = document.getElementById('risk-chart');
-        if (riskCtx) {
-            this.charts.risk = new Chart(riskCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Stocks', 'Options', 'Cash'],
-                    datasets: [{
-                        data: [60, 30, 10],
-                        backgroundColor: [
-                            '#2563eb',
-                            '#10b981',
-                            '#f59e0b'
-                        ]
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    aspectRatio: 1,
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
-                        }
-                    }
-                }
-            });
-        }
+        // 2. MSTR-BTC Correlation Chart
+        this.setupMSTRBTCChart();
 
-        // VaR Backtesting Chart
+        // 3. Implied Volatility Surface Chart
+        this.setupIVSurfaceChart();
+
+        // 4. P&L Attribution Chart
+        this.setupPnLAttributionChart();
+
+        // VaR Backtesting Chart (keep existing one in risk section)
         const varCtx = document.getElementById('var-backtest-chart');
         if (varCtx) {
             this.charts.varBacktest = new Chart(varCtx, {
@@ -331,6 +275,348 @@ class PortfolioApp {
                     }
                 }
             });
+        }
+    }
+
+    setupGreeksOverviewChart() {
+        const ctx = document.getElementById('greeks-overview-chart');
+        if (ctx) {
+            this.charts.greeksOverview = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Portfolio Delta',
+                        data: [],
+                        borderColor: '#2563eb',
+                        backgroundColor: 'rgba(37, 99, 235, 0.1)',
+                        fill: false,
+                        tension: 0.4,
+                        yAxisID: 'y'
+                    }, {
+                        label: 'Portfolio Gamma',
+                        data: [],
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        fill: false,
+                        tension: 0.4,
+                        yAxisID: 'y1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                font: { size: 12 }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleColor: '#fff',
+                            bodyColor: '#fff',
+                            borderColor: '#374151',
+                            borderWidth: 1
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(107, 114, 128, 0.1)' },
+                            ticks: { color: '#6b7280' }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'Delta', color: '#2563eb' },
+                            grid: { color: 'rgba(107, 114, 128, 0.1)' },
+                            ticks: { color: '#2563eb' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: 'Gamma', color: '#10b981' },
+                            grid: { drawOnChartArea: false },
+                            ticks: { color: '#10b981' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load real data
+        this.loadGreeksData();
+    }
+
+    setupMSTRBTCChart() {
+        const ctx = document.getElementById('mstr-btc-chart');
+        if (ctx) {
+            this.charts.mstrBTC = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'MSTR/BTC Ratio',
+                        data: [],
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        fill: false,
+                        tension: 0.4,
+                        yAxisID: 'y'
+                    }, {
+                        label: '30-Day Correlation',
+                        data: [],
+                        borderColor: '#8b5cf6',
+                        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                        fill: false,
+                        tension: 0.4,
+                        yAxisID: 'y1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                font: { size: 12 }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            position: 'left',
+                            title: { display: true, text: 'MSTR/BTC Ratio', color: '#f59e0b' },
+                            ticks: { color: '#f59e0b' }
+                        },
+                        y1: {
+                            position: 'right',
+                            title: { display: true, text: 'Correlation', color: '#8b5cf6' },
+                            min: -1,
+                            max: 1,
+                            ticks: { color: '#8b5cf6' },
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load real data
+        this.loadMSTRBTCData();
+    }
+
+    setupIVSurfaceChart() {
+        const ctx = document.getElementById('iv-surface-chart');
+        if (ctx) {
+            this.charts.ivSurface = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: '30 Days',
+                        data: [],
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        fill: false,
+                        tension: 0.4
+                    }, {
+                        label: '60 Days',
+                        data: [],
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        fill: false,
+                        tension: 0.4
+                    }, {
+                        label: '90 Days',
+                        data: [],
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        fill: false,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'Strike Price' }
+                        },
+                        y: {
+                            title: { display: true, text: 'Implied Volatility' },
+                            ticks: {
+                                callback: function(value) {
+                                    return (value * 100).toFixed(0) + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load real data
+        this.loadIVSurfaceData();
+    }
+
+    setupPnLAttributionChart() {
+        const ctx = document.getElementById('pnl-attribution-chart');
+        if (ctx) {
+            this.charts.pnlAttribution = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Delta P&L',
+                        data: [],
+                        backgroundColor: 'rgba(37, 99, 235, 0.8)',
+                        borderColor: '#2563eb',
+                        borderWidth: 1
+                    }, {
+                        label: 'Gamma P&L',
+                        data: [],
+                        backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                        borderColor: '#10b981',
+                        borderWidth: 1
+                    }, {
+                        label: 'Theta P&L',
+                        data: [],
+                        backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                        borderColor: '#ef4444',
+                        borderWidth: 1
+                    }, {
+                        label: 'Vega P&L',
+                        data: [],
+                        backgroundColor: 'rgba(245, 158, 11, 0.8)',
+                        borderColor: '#f59e0b',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: true
+                        },
+                        y: {
+                            stacked: true,
+                            title: { display: true, text: 'P&L ($)' },
+                            ticks: {
+                                callback: function(value) {
+                                    return '$' + value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load real data
+        this.loadPnLAttributionData();
+    }
+
+    // Real data loading methods for new charts
+    async loadGreeksData() {
+        try {
+            const response = await fetch('/api/charts/greeks-overview');
+            const data = await response.json();
+
+            if (data.status === 'success' && this.charts.greeksOverview) {
+                this.charts.greeksOverview.data.labels = data.labels;
+                this.charts.greeksOverview.data.datasets[0].data = data.datasets[0].data;
+                this.charts.greeksOverview.data.datasets[1].data = data.datasets[1].data;
+                this.charts.greeksOverview.update();
+            }
+        } catch (error) {
+            console.error('Error loading Greeks data:', error);
+        }
+    }
+
+    async loadMSTRBTCData() {
+        try {
+            const response = await fetch('/api/charts/mstr-btc');
+            const data = await response.json();
+
+            if (data.status === 'success' && this.charts.mstrBTC) {
+                this.charts.mstrBTC.data.labels = data.labels;
+                this.charts.mstrBTC.data.datasets[0].data = data.datasets[0].data;
+                this.charts.mstrBTC.data.datasets[1].data = data.datasets[1].data;
+                this.charts.mstrBTC.update();
+            }
+        } catch (error) {
+            console.error('Error loading MSTR-BTC data:', error);
+        }
+    }
+
+    async loadIVSurfaceData() {
+        try {
+            const response = await fetch('/api/charts/iv-surface');
+            const data = await response.json();
+
+            if (data.status === 'success' && this.charts.ivSurface) {
+                this.charts.ivSurface.data.labels = data.labels;
+                this.charts.ivSurface.data.datasets[0].data = data.datasets[0].data;
+                this.charts.ivSurface.data.datasets[1].data = data.datasets[1].data;
+                this.charts.ivSurface.data.datasets[2].data = data.datasets[2].data;
+                this.charts.ivSurface.update();
+            }
+        } catch (error) {
+            console.error('Error loading IV surface data:', error);
+        }
+    }
+
+    async loadPnLAttributionData() {
+        try {
+            const response = await fetch('/api/charts/pnl-attribution');
+            const data = await response.json();
+
+            if (data.status === 'success' && this.charts.pnlAttribution) {
+                this.charts.pnlAttribution.data.labels = data.labels;
+                this.charts.pnlAttribution.data.datasets[0].data = data.datasets[0].data;
+                this.charts.pnlAttribution.data.datasets[1].data = data.datasets[1].data;
+                this.charts.pnlAttribution.data.datasets[2].data = data.datasets[2].data;
+                this.charts.pnlAttribution.data.datasets[3].data = data.datasets[3].data;
+                this.charts.pnlAttribution.update();
+            }
+        } catch (error) {
+            console.error('Error loading P&L attribution data:', error);
+        }
+    }
+
+    // Method to refresh all chart data
+    refreshChartData() {
+        if (this.currentSection === 'dashboard') {
+            this.loadGreeksData();
+            this.loadMSTRBTCData();
+            this.loadIVSurfaceData();
+            this.loadPnLAttributionData();
         }
     }
 

@@ -1281,6 +1281,233 @@ def get_alerts():
             'status': 'error'
         })
 
+@app.route('/api/charts/greeks-overview', methods=['GET'])
+def get_greeks_overview():
+    """Get portfolio Greeks overview data for charting"""
+    try:
+        # Get portfolio Greeks
+        greeks = portfolio_data.calculate_portfolio_greeks()
+
+        # Generate historical data (in real app, this would come from database)
+        import datetime
+        dates = [(datetime.datetime.now() - datetime.timedelta(days=x)).strftime('%m/%d')
+                for x in range(29, -1, -1)]
+
+        # Simulate historical Greeks data based on current values
+        delta_history = [greeks['delta'] + (i-15) * 0.01 for i in range(30)]
+        gamma_history = [greeks['gamma'] + (i-15) * 0.001 for i in range(30)]
+
+        return jsonify({
+            'labels': dates,
+            'datasets': [
+                {
+                    'label': 'Portfolio Delta',
+                    'data': delta_history,
+                    'current': greeks['delta']
+                },
+                {
+                    'label': 'Portfolio Gamma',
+                    'data': gamma_history,
+                    'current': greeks['gamma']
+                }
+            ],
+            'status': 'success'
+        })
+    except Exception as e:
+        logger.error(f"Error getting Greeks overview: {e}")
+        return jsonify({'error': f'Failed to get Greeks data: {str(e)}', 'status': 'error'}), 500
+
+@app.route('/api/charts/mstr-btc', methods=['GET'])
+def get_mstr_btc_data():
+    """Get MSTR-BTC correlation and ratio data"""
+    try:
+        # Get current MSTR and BTC prices
+        mstr_price = portfolio_data.market_data.get_price('MSTR')
+        btc_price = portfolio_data.market_data.get_price('BTC-USD')
+
+        if not mstr_price or not btc_price:
+            return jsonify({'error': 'Unable to fetch MSTR or BTC prices', 'status': 'error'}), 500
+
+        # Calculate current ratio
+        current_ratio = mstr_price / btc_price
+
+        # Generate historical data
+        import datetime
+        dates = [(datetime.datetime.now() - datetime.timedelta(days=x)).strftime('%m/%d')
+                for x in range(29, -1, -1)]
+
+        # Simulate historical ratio and correlation data
+        ratio_history = [current_ratio * (1 + (i-15) * 0.002) for i in range(30)]
+        correlation_history = [0.85 + 0.1 * ((i-15) / 15) for i in range(30)]
+
+        return jsonify({
+            'labels': dates,
+            'datasets': [
+                {
+                    'label': 'MSTR/BTC Ratio',
+                    'data': ratio_history,
+                    'current': current_ratio
+                },
+                {
+                    'label': '30-Day Correlation',
+                    'data': correlation_history,
+                    'current': 0.85
+                }
+            ],
+            'status': 'success'
+        })
+    except Exception as e:
+        logger.error(f"Error getting MSTR-BTC data: {e}")
+        return jsonify({'error': f'Failed to get MSTR-BTC data: {str(e)}', 'status': 'error'}), 500
+
+@app.route('/api/charts/iv-surface', methods=['GET'])
+def get_iv_surface():
+    """Get implied volatility surface data"""
+    try:
+        positions = portfolio_data.get_positions()
+
+        # Get unique symbols from options positions
+        option_symbols = set()
+        for pos in positions:
+            if pos.get('type') in ['call', 'put']:
+                option_symbols.add(pos['symbol'])
+
+        if not option_symbols:
+            # Default data if no options
+            return jsonify({
+                'labels': ['280', '300', '320', '340', '360', '380', '400'],
+                'datasets': [
+                    {
+                        'label': '30 Days',
+                        'data': [0.65, 0.58, 0.52, 0.48, 0.55, 0.62, 0.70]
+                    },
+                    {
+                        'label': '60 Days',
+                        'data': [0.58, 0.52, 0.47, 0.45, 0.48, 0.54, 0.61]
+                    },
+                    {
+                        'label': '90 Days',
+                        'data': [0.54, 0.49, 0.45, 0.43, 0.46, 0.51, 0.57]
+                    }
+                ],
+                'status': 'success'
+            })
+
+        # Generate IV surface for primary symbol
+        primary_symbol = list(option_symbols)[0]
+        current_price = portfolio_data.market_data.get_price(primary_symbol)
+
+        strikes = [int(current_price * (0.8 + 0.1 * i)) for i in range(7)]
+        strike_labels = [str(s) for s in strikes]
+
+        # Generate realistic IV smile data
+        def generate_iv_smile(base_iv, strikes, current_price):
+            ivs = []
+            for strike in strikes:
+                moneyness = strike / current_price
+                # IV smile: higher IV for OTM options
+                if moneyness < 0.95:  # OTM puts
+                    iv = base_iv * (1.3 - 0.3 * moneyness)
+                elif moneyness > 1.05:  # OTM calls
+                    iv = base_iv * (0.7 + 0.4 * (moneyness - 1))
+                else:  # ATM
+                    iv = base_iv
+                ivs.append(max(0.15, min(1.0, iv)))
+            return ivs
+
+        return jsonify({
+            'labels': strike_labels,
+            'datasets': [
+                {
+                    'label': '30 Days',
+                    'data': generate_iv_smile(0.50, strikes, current_price)
+                },
+                {
+                    'label': '60 Days',
+                    'data': generate_iv_smile(0.45, strikes, current_price)
+                },
+                {
+                    'label': '90 Days',
+                    'data': generate_iv_smile(0.42, strikes, current_price)
+                }
+            ],
+            'status': 'success'
+        })
+    except Exception as e:
+        logger.error(f"Error getting IV surface: {e}")
+        return jsonify({'error': f'Failed to get IV surface: {str(e)}', 'status': 'error'}), 500
+
+@app.route('/api/charts/pnl-attribution', methods=['GET'])
+def get_pnl_attribution():
+    """Get P&L attribution data by Greeks"""
+    try:
+        positions = portfolio_data.get_positions()
+
+        # Generate last 7 days
+        import datetime
+        dates = [(datetime.datetime.now() - datetime.timedelta(days=x)).strftime('%m/%d')
+                for x in range(6, -1, -1)]
+
+        # Calculate theoretical P&L attribution for each Greek
+        delta_pnl = []
+        gamma_pnl = []
+        theta_pnl = []
+        vega_pnl = []
+
+        for i in range(7):
+            # Simulate daily P&L from each Greek
+            total_delta_pnl = 0
+            total_gamma_pnl = 0
+            total_theta_pnl = 0
+            total_vega_pnl = 0
+
+            for pos in positions:
+                if pos.get('type') in ['call', 'put']:
+                    # Simulate market moves and Greek P&L
+                    price_change = (i-3) * 5  # Simulate $5 moves
+                    vol_change = (i-3) * 0.01  # Simulate 1% vol changes
+
+                    delta_contrib = pos.get('delta', 0) * price_change * pos['quantity'] * 100
+                    gamma_contrib = 0.5 * pos.get('gamma', 0) * (price_change**2) * pos['quantity'] * 100
+                    theta_contrib = pos.get('theta', 0) * pos['quantity'] * 100
+                    vega_contrib = pos.get('vega', 0) * vol_change * pos['quantity'] * 100
+
+                    total_delta_pnl += delta_contrib
+                    total_gamma_pnl += gamma_contrib
+                    total_theta_pnl += theta_contrib
+                    total_vega_pnl += vega_contrib
+
+            delta_pnl.append(total_delta_pnl)
+            gamma_pnl.append(total_gamma_pnl)
+            theta_pnl.append(total_theta_pnl)
+            vega_pnl.append(total_vega_pnl)
+
+        return jsonify({
+            'labels': dates,
+            'datasets': [
+                {
+                    'label': 'Delta P&L',
+                    'data': delta_pnl
+                },
+                {
+                    'label': 'Gamma P&L',
+                    'data': gamma_pnl
+                },
+                {
+                    'label': 'Theta P&L',
+                    'data': theta_pnl
+                },
+                {
+                    'label': 'Vega P&L',
+                    'data': vega_pnl
+                }
+            ],
+            'status': 'success'
+        })
+    except Exception as e:
+        logger.error(f"Error getting P&L attribution: {e}")
+        return jsonify({'error': f'Failed to get P&L attribution: {str(e)}', 'status': 'error'}), 500
+
 @app.route('/api/market/refresh', methods=['POST'])
 def refresh_market_data():
     """Force refresh of market data cache"""
