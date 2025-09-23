@@ -367,10 +367,8 @@ class PortfolioApp {
     }
 
     simulateRealTimeUpdates() {
+        // Real-time updates for monitoring only, not dashboard
         setInterval(() => {
-            if (this.currentSection === 'dashboard') {
-                this.updateMetrics();
-            }
             if (this.currentSection === 'monitoring') {
                 this.addLogEntry();
             }
@@ -626,23 +624,7 @@ class PortfolioApp {
         }
     }
 
-    updateMetrics() {
-        // Simulate real-time metric updates
-        const portfolioValue = 125420.50 + (Math.random() - 0.5) * 1000;
-        const var95 = 3245.80 + (Math.random() - 0.5) * 200;
-        const delta = 0.42 + (Math.random() - 0.5) * 0.1;
-        const gamma = 0.12 + (Math.random() - 0.5) * 0.02;
-
-        const portfolioValueEl = document.getElementById('portfolio-value');
-        const varValueEl = document.getElementById('var-value');
-        const deltaValueEl = document.getElementById('delta-value');
-        const gammaValueEl = document.getElementById('gamma-value');
-
-        if (portfolioValueEl) portfolioValueEl.textContent = '$' + portfolioValue.toLocaleString();
-        if (varValueEl) varValueEl.textContent = '$' + var95.toLocaleString();
-        if (deltaValueEl) deltaValueEl.textContent = delta.toFixed(2);
-        if (gammaValueEl) gammaValueEl.textContent = gamma.toFixed(2);
-    }
+    // Removed updateMetrics() function - dashboard now only uses real API data
 
     createPositionRow(position) {
         const row = document.createElement('tr');
@@ -706,14 +688,29 @@ class PortfolioApp {
             }
         } else if (positionType === 'call' || positionType === 'put') {
             const strikePrice = formData.get('strike_price');
+            const expirationDate = formData.get('expiration_date');
+            const optionStyle = formData.get('option_style');
             const premium = formData.get('premium');
 
+            // Validate required option fields
             if (!strikePrice || strikePrice.trim() === '') {
                 this.showNotification('Strike price is required for options', 'error');
                 return;
             }
 
+            if (!expirationDate || expirationDate.trim() === '') {
+                this.showNotification('Expiration date is required for options', 'error');
+                return;
+            }
+
+            if (!optionStyle || optionStyle.trim() === '') {
+                this.showNotification('Option style is required for options', 'error');
+                return;
+            }
+
             position.strike_price = parseFloat(strikePrice);
+            position.expiration_date = expirationDate;
+            position.option_style = optionStyle;
 
             if (premium && premium.trim() !== '') {
                 position.premium = parseFloat(premium);
@@ -876,8 +873,7 @@ class PortfolioApp {
     }
 
     updateRealTimeData() {
-        // Update all real-time data
-        this.updateMetrics();
+        // Update real-time monitoring data only
         this.updateHealthIndicators();
         this.addLogEntry();
     }

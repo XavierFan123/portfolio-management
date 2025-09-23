@@ -348,34 +348,9 @@ class PortfolioData:
                     data = json.load(f)
                     self.positions = data.get('positions', [])
             else:
-                # Initialize with demo data
-                self.positions = [
-                    {
-                        'id': '1',
-                        'symbol': 'MSTR',
-                        'type': 'stock',
-                        'quantity': 100,
-                        'avg_cost': 1150.0,
-                        'delta': 1.0,
-                        'gamma': 0.0,
-                        'vega': 0.0,
-                        'theta': 0.0,
-                        'timestamp': datetime.now().isoformat()
-                    },
-                    {
-                        'id': '2',
-                        'symbol': 'BTC-USD',
-                        'type': 'crypto',
-                        'quantity': 0.5,
-                        'avg_cost': 65000.0,
-                        'delta': 1.0,
-                        'gamma': 0.0,
-                        'vega': 0.0,
-                        'theta': 0.0,
-                        'timestamp': datetime.now().isoformat()
-                    }
-                ]
-                self.save_data()
+                # Initialize with empty positions (user will add their own)
+                self.positions = []
+                logger.info("Created new portfolio with empty positions")
         except Exception as e:
             logger.error(f"Error loading portfolio data: {e}")
             self.positions = []
