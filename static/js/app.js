@@ -187,24 +187,40 @@ class PortfolioApp {
     toggleFormFields(positionType) {
         const avgCostGroup = document.getElementById('avg-cost-group');
         const strikePriceGroup = document.getElementById('strike-price-group');
+        const expirationGroup = document.getElementById('expiration-group');
+        const optionStyleGroup = document.getElementById('option-style-group');
         const premiumGroup = document.getElementById('premium-group');
+
         const strikePriceInput = document.getElementById('strike-price');
+        const expirationInput = document.getElementById('expiration-date');
+        const optionStyleInput = document.getElementById('option-style');
 
         // Hide all optional fields first
         if (avgCostGroup) avgCostGroup.style.display = 'none';
         if (strikePriceGroup) strikePriceGroup.style.display = 'none';
+        if (expirationGroup) expirationGroup.style.display = 'none';
+        if (optionStyleGroup) optionStyleGroup.style.display = 'none';
         if (premiumGroup) premiumGroup.style.display = 'none';
 
         // Remove required attribute from all optional fields
         if (strikePriceInput) strikePriceInput.removeAttribute('required');
+        if (expirationInput) expirationInput.removeAttribute('required');
+        if (optionStyleInput) optionStyleInput.removeAttribute('required');
 
         // Show relevant fields based on position type
         if (positionType === 'stock' || positionType === 'crypto') {
             if (avgCostGroup) avgCostGroup.style.display = 'block';
         } else if (positionType === 'call' || positionType === 'put') {
+            // Show all option-specific fields
             if (strikePriceGroup) strikePriceGroup.style.display = 'block';
+            if (expirationGroup) expirationGroup.style.display = 'block';
+            if (optionStyleGroup) optionStyleGroup.style.display = 'block';
             if (premiumGroup) premiumGroup.style.display = 'block';
+
+            // Make option fields required
             if (strikePriceInput) strikePriceInput.setAttribute('required', 'required');
+            if (expirationInput) expirationInput.setAttribute('required', 'required');
+            if (optionStyleInput) optionStyleInput.setAttribute('required', 'required');
         }
     }
 

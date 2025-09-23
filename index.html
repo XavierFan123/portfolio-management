@@ -330,10 +330,24 @@
                     <label for="strike-price">Strike Price *</label>
                     <input type="number" step="0.01" id="strike-price" name="strike_price" placeholder="Option strike price">
                 </div>
+                <div class="form-group" id="expiration-group" style="display: none;">
+                    <label for="expiration-date">Expiration Date *</label>
+                    <input type="date" id="expiration-date" name="expiration_date" required>
+                    <small>Enter the option expiration date</small>
+                </div>
+                <div class="form-group" id="option-style-group" style="display: none;">
+                    <label for="option-style">Option Style *</label>
+                    <select id="option-style" name="option_style" required>
+                        <option value="">Select Style</option>
+                        <option value="american">American</option>
+                        <option value="european">European</option>
+                    </select>
+                    <small>American options can be exercised early</small>
+                </div>
                 <div class="form-group" id="premium-group" style="display: none;">
                     <label for="premium">Premium Paid (Optional)</label>
                     <input type="number" step="0.01" id="premium" name="premium" placeholder="Premium per contract">
-                    <small>If empty, a default premium will be used</small>
+                    <small>If empty, current market option price will be used</small>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Add Position</button>

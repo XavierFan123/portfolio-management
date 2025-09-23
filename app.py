@@ -16,6 +16,8 @@ from scipy.stats import norm
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from threading import Lock
+from enum import Enum
+from dataclasses import dataclass
 
 # Initialize Flask app
 app = Flask(__name__, static_folder='static')
@@ -32,6 +34,11 @@ def after_request(response):
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+class OptionStyle(Enum):
+    """期权类型枚举"""
+    EUROPEAN = "european"
+    AMERICAN = "american"
 
 class MarketDataProvider:
     """Professional market data provider with caching and fallback"""
@@ -264,24 +271,52 @@ class PortfolioData:
         return False
 
     def _calculate_option_price(self, position: Dict[str, Any], underlying_price: float) -> float:
-        """Calculate option price using Black-Scholes model"""
+        """Calculate option price using appropriate model based on style"""
         if position['type'] not in ['call', 'put']:
             return underlying_price
 
         try:
             S = underlying_price  # Current underlying price
             K = position.get('strike_price', underlying_price)  # Strike price
-            T = 30 / 365.0  # Default 30 days to expiration (simplified)
             r = 0.05  # Risk-free rate (5%)
+            q = self._get_dividend_yield(position['symbol'])  # Dividend yield
             sigma = self._get_implied_volatility(position['symbol'])  # Implied volatility
 
-            return self._black_scholes_price(S, K, T, r, sigma, position['type'])
+            # Calculate time to expiration
+            T = self._calculate_time_to_expiration(position)
+
+            # Choose pricing model based on option style
+            option_style = position.get('option_style', 'american')
+            if option_style == 'european':
+                return self._black_scholes_price(S, K, T, r, q, sigma, position['type'])
+            else:  # American option
+                return self._binomial_american_price(S, K, T, r, q, sigma, position['type'])
+
         except Exception as e:
             logger.error(f"Error calculating option price: {e}")
             return 10.0  # Default option price
 
-    def _black_scholes_price(self, S: float, K: float, T: float, r: float, sigma: float, option_type: str) -> float:
-        """Black-Scholes option pricing formula"""
+    def _calculate_time_to_expiration(self, position: Dict[str, Any]) -> float:
+        """Calculate time to expiration in years"""
+        try:
+            expiration_str = position.get('expiration_date')
+            if expiration_str:
+                # Parse expiration date
+                expiration_date = datetime.strptime(expiration_str, '%Y-%m-%d')
+                current_date = datetime.now()
+
+                # Calculate time difference in years
+                time_diff = (expiration_date - current_date).days / 365.0
+                return max(time_diff, 0.001)  # Minimum 1 day
+            else:
+                # Default to 30 days if no expiration date
+                return 30 / 365.0
+        except Exception as e:
+            logger.error(f"Error calculating time to expiration: {e}")
+            return 30 / 365.0  # Default fallback
+
+    def _black_scholes_price(self, S: float, K: float, T: float, r: float, q: float, sigma: float, option_type: str) -> float:
+        """Black-Scholes option pricing formula with dividend yield"""
         if T <= 0:
             # At expiration, option value is intrinsic value
             if option_type == 'call':
@@ -290,13 +325,14 @@ class PortfolioData:
                 return max(K - S, 0)
 
         try:
-            d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+            # Dividend-adjusted Black-Scholes formula
+            d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
             d2 = d1 - sigma * np.sqrt(T)
 
             if option_type == 'call':
-                price = S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+                price = S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
             else:  # put
-                price = K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+                price = K * np.exp(-r * T) * norm.cdf(-d2) - S * np.exp(-q * T) * norm.cdf(-d1)
 
             return max(price, 0.01)  # Minimum price of $0.01
         except Exception as e:
@@ -322,6 +358,76 @@ class PortfolioData:
         }
         return volatility_map.get(symbol.upper(), 0.40)  # Default 40% vol
 
+    def _get_dividend_yield(self, symbol: str) -> float:
+        """Get dividend yield for symbol"""
+        # Professional dividend yield estimates
+        dividend_map = {
+            'MSTR': 0.0,    # No dividend
+            'BTC-USD': 0.0,  # No dividend
+            'ETH-USD': 0.0,  # No dividend
+            'TSLA': 0.0,    # No dividend
+            'NVDA': 0.005,  # 0.5%
+            'AAPL': 0.015,  # 1.5%
+            'SPY': 0.018,   # 1.8%
+            'QQQ': 0.008,   # 0.8%
+            'MSFT': 0.024,  # 2.4%
+            'GOOGL': 0.0,   # No dividend
+        }
+        return dividend_map.get(symbol.upper(), 0.01)  # Default 1% yield
+
+    def _binomial_american_price(self, S: float, K: float, T: float, r: float, q: float, sigma: float, option_type: str, N: int = 100) -> float:
+        """Binomial tree pricing for American options"""
+        if T <= 0:
+            # At expiration, option value is intrinsic value
+            if option_type == 'call':
+                return max(S - K, 0)
+            else:  # put
+                return max(K - S, 0)
+
+        try:
+            dt = T / N
+            u = np.exp(sigma * np.sqrt(dt))
+            d = 1 / u
+            p = (np.exp((r - q) * dt) - d) / (u - d)
+            disc = np.exp(-r * dt)
+
+            # Initialize asset prices at maturity
+            prices = np.zeros(N + 1)
+            values = np.zeros(N + 1)
+
+            # Calculate terminal option values
+            for i in range(N + 1):
+                prices[i] = S * (u ** (N - i)) * (d ** i)
+                if option_type == 'call':
+                    values[i] = max(prices[i] - K, 0)
+                else:  # put
+                    values[i] = max(K - prices[i], 0)
+
+            # Work backwards through the tree
+            for j in range(N - 1, -1, -1):
+                for i in range(j + 1):
+                    # Calculate option value
+                    option_value = disc * (p * values[i] + (1 - p) * values[i + 1])
+
+                    # Current asset price
+                    current_price = S * (u ** (j - i)) * (d ** i)
+
+                    # Early exercise value
+                    if option_type == 'call':
+                        exercise_value = max(current_price - K, 0)
+                    else:  # put
+                        exercise_value = max(K - current_price, 0)
+
+                    # American option: take max of holding vs exercising
+                    values[i] = max(option_value, exercise_value)
+
+            return max(values[0], 0.01)  # Minimum price of $0.01
+
+        except Exception as e:
+            logger.error(f"Error in binomial American pricing: {e}")
+            # Fallback to European Black-Scholes
+            return self._black_scholes_price(S, K, T, r, q, sigma, option_type)
+
     def _calculate_greeks(self, position: Dict[str, Any]) -> Dict[str, float]:
         """Calculate accurate Greeks using Black-Scholes analytical formulas"""
         greeks = {'delta': 0.0, 'gamma': 0.0, 'vega': 0.0, 'theta': 0.0}
@@ -336,26 +442,29 @@ class PortfolioData:
             try:
                 S = position.get('underlying_price', self.market_data.get_price(position['symbol']))
                 K = position.get('strike_price', S)
-                T = 30 / 365.0  # Default 30 days
+                T = self._calculate_time_to_expiration(position)
                 r = 0.05
+                q = self._get_dividend_yield(position['symbol'])
                 sigma = self._get_implied_volatility(position['symbol'])
 
-                # Calculate d1 and d2
-                d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+                # Calculate d1 and d2 with dividend adjustment
+                d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
                 d2 = d1 - sigma * np.sqrt(T)
 
                 if position['type'] == 'call':
-                    greeks['delta'] = norm.cdf(d1)
-                    greeks['theta'] = -(S * norm.pdf(d1) * sigma / (2 * np.sqrt(T)) +
-                                    r * K * np.exp(-r * T) * norm.cdf(d2)) / 365
+                    greeks['delta'] = np.exp(-q * T) * norm.cdf(d1)
+                    greeks['theta'] = -(S * np.exp(-q * T) * norm.pdf(d1) * sigma / (2 * np.sqrt(T)) +
+                                    r * K * np.exp(-r * T) * norm.cdf(d2) -
+                                    q * S * np.exp(-q * T) * norm.cdf(d1)) / 365
                 else:  # put
-                    greeks['delta'] = norm.cdf(d1) - 1
-                    greeks['theta'] = -(S * norm.pdf(d1) * sigma / (2 * np.sqrt(T)) -
-                                    r * K * np.exp(-r * T) * norm.cdf(-d2)) / 365
+                    greeks['delta'] = -np.exp(-q * T) * norm.cdf(-d1)
+                    greeks['theta'] = -(S * np.exp(-q * T) * norm.pdf(d1) * sigma / (2 * np.sqrt(T)) -
+                                    r * K * np.exp(-r * T) * norm.cdf(-d2) +
+                                    q * S * np.exp(-q * T) * norm.cdf(-d1)) / 365
 
-                # Gamma and Vega are same for calls and puts
-                greeks['gamma'] = norm.pdf(d1) / (S * sigma * np.sqrt(T))
-                greeks['vega'] = S * norm.pdf(d1) * np.sqrt(T) / 100  # Per 1% vol change
+                # Gamma and Vega are same for calls and puts (with dividend adjustment)
+                greeks['gamma'] = np.exp(-q * T) * norm.pdf(d1) / (S * sigma * np.sqrt(T))
+                greeks['vega'] = S * np.exp(-q * T) * norm.pdf(d1) * np.sqrt(T) / 100  # Per 1% vol change
 
             except Exception as e:
                 logger.error(f"Error calculating option Greeks: {e}")
@@ -598,10 +707,27 @@ def add_position():
 
         # Handle different position types
         if data['type'].lower() in ['call', 'put']:
+            # Validate required option fields
             if 'strike_price' not in data:
                 return jsonify({'error': 'Strike price required for options', 'status': 'error'}), 400
+            if 'expiration_date' not in data:
+                return jsonify({'error': 'Expiration date required for options', 'status': 'error'}), 400
+            if 'option_style' not in data:
+                return jsonify({'error': 'Option style required for options', 'status': 'error'}), 400
+
             position['strike_price'] = float(data['strike_price'])
-            position['avg_cost'] = float(data.get('premium', 15.0))
+            position['expiration_date'] = data['expiration_date']
+            position['option_style'] = data['option_style'].lower()
+
+            # For premium, use provided value or calculate current option price
+            if 'premium' in data and data['premium']:
+                position['avg_cost'] = float(data['premium'])
+            else:
+                # Calculate current option price as default premium
+                underlying_price = portfolio_data.market_data.get_price(position['symbol'])
+                temp_position = {**position, 'underlying_price': underlying_price}
+                calculated_price = portfolio_data._calculate_option_price(temp_position, underlying_price)
+                position['avg_cost'] = calculated_price
         else:
             position['avg_cost'] = float(data.get('avg_cost', portfolio_data.market_data.get_price(position['symbol'])))
 
