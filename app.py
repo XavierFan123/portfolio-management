@@ -11,6 +11,8 @@ import time
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 import json
+import numpy as np
+from scipy.stats import norm
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from threading import Lock
@@ -261,8 +263,67 @@ class PortfolioData:
             return True
         return False
 
+    def _calculate_option_price(self, position: Dict[str, Any], underlying_price: float) -> float:
+        """Calculate option price using Black-Scholes model"""
+        if position['type'] not in ['call', 'put']:
+            return underlying_price
+
+        try:
+            S = underlying_price  # Current underlying price
+            K = position.get('strike_price', underlying_price)  # Strike price
+            T = 30 / 365.0  # Default 30 days to expiration (simplified)
+            r = 0.05  # Risk-free rate (5%)
+            sigma = self._get_implied_volatility(position['symbol'])  # Implied volatility
+
+            return self._black_scholes_price(S, K, T, r, sigma, position['type'])
+        except Exception as e:
+            logger.error(f"Error calculating option price: {e}")
+            return 10.0  # Default option price
+
+    def _black_scholes_price(self, S: float, K: float, T: float, r: float, sigma: float, option_type: str) -> float:
+        """Black-Scholes option pricing formula"""
+        if T <= 0:
+            # At expiration, option value is intrinsic value
+            if option_type == 'call':
+                return max(S - K, 0)
+            else:  # put
+                return max(K - S, 0)
+
+        try:
+            d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+            d2 = d1 - sigma * np.sqrt(T)
+
+            if option_type == 'call':
+                price = S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+            else:  # put
+                price = K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
+
+            return max(price, 0.01)  # Minimum price of $0.01
+        except Exception as e:
+            logger.error(f"Error in Black-Scholes calculation: {e}")
+            # Fallback to intrinsic value
+            if option_type == 'call':
+                return max(S - K, 0.01)
+            else:
+                return max(K - S, 0.01)
+
+    def _get_implied_volatility(self, symbol: str) -> float:
+        """Get implied volatility for symbol (simplified)"""
+        # Professional volatility estimates based on asset type
+        volatility_map = {
+            'MSTR': 0.85,  # High volatility for MSTR
+            'BTC-USD': 0.70,  # High crypto volatility
+            'ETH-USD': 0.75,
+            'TSLA': 0.55,
+            'NVDA': 0.45,
+            'AAPL': 0.30,
+            'SPY': 0.20,
+            'QQQ': 0.25
+        }
+        return volatility_map.get(symbol.upper(), 0.40)  # Default 40% vol
+
     def _calculate_greeks(self, position: Dict[str, Any]) -> Dict[str, float]:
-        """Calculate accurate Greeks based on position type and current market conditions"""
+        """Calculate accurate Greeks using Black-Scholes analytical formulas"""
         greeks = {'delta': 0.0, 'gamma': 0.0, 'vega': 0.0, 'theta': 0.0}
 
         if position['type'] in ['stock', 'crypto']:
@@ -271,58 +332,46 @@ class PortfolioData:
             greeks['vega'] = 0.0
             greeks['theta'] = 0.0
 
-        elif position['type'] == 'call':
-            # Simplified Black-Scholes Greeks for calls
-            current_price = self.market_data.get_price(position['symbol'])
-            strike_price = position.get('strike_price', current_price)
+        elif position['type'] in ['call', 'put']:
+            try:
+                S = position.get('underlying_price', self.market_data.get_price(position['symbol']))
+                K = position.get('strike_price', S)
+                T = 30 / 365.0  # Default 30 days
+                r = 0.05
+                sigma = self._get_implied_volatility(position['symbol'])
 
-            # Moneyness calculation
-            moneyness = current_price / strike_price
+                # Calculate d1 and d2
+                d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+                d2 = d1 - sigma * np.sqrt(T)
 
-            if moneyness > 1.2:  # Deep ITM
-                greeks['delta'] = 0.85
-                greeks['gamma'] = 0.05
-            elif moneyness > 1.0:  # ITM
-                greeks['delta'] = 0.65
-                greeks['gamma'] = 0.12
-            elif moneyness > 0.95:  # ATM
-                greeks['delta'] = 0.50
-                greeks['gamma'] = 0.15
-            elif moneyness > 0.8:  # OTM
-                greeks['delta'] = 0.25
-                greeks['gamma'] = 0.10
-            else:  # Deep OTM
-                greeks['delta'] = 0.10
-                greeks['gamma'] = 0.03
+                if position['type'] == 'call':
+                    greeks['delta'] = norm.cdf(d1)
+                    greeks['theta'] = -(S * norm.pdf(d1) * sigma / (2 * np.sqrt(T)) +
+                                    r * K * np.exp(-r * T) * norm.cdf(d2)) / 365
+                else:  # put
+                    greeks['delta'] = norm.cdf(d1) - 1
+                    greeks['theta'] = -(S * norm.pdf(d1) * sigma / (2 * np.sqrt(T)) -
+                                    r * K * np.exp(-r * T) * norm.cdf(-d2)) / 365
 
-            greeks['vega'] = 15.0 + (0.95 - abs(moneyness - 1.0)) * 10  # Higher vega for ATM
-            greeks['theta'] = -8.0 - greeks['vega'] * 0.3  # Time decay
+                # Gamma and Vega are same for calls and puts
+                greeks['gamma'] = norm.pdf(d1) / (S * sigma * np.sqrt(T))
+                greeks['vega'] = S * norm.pdf(d1) * np.sqrt(T) / 100  # Per 1% vol change
 
-        elif position['type'] == 'put':
-            # Simplified Black-Scholes Greeks for puts
-            current_price = self.market_data.get_price(position['symbol'])
-            strike_price = position.get('strike_price', current_price)
+            except Exception as e:
+                logger.error(f"Error calculating option Greeks: {e}")
+                # Fallback to simple approximations
+                current_price = position.get('underlying_price', 100)
+                strike_price = position.get('strike_price', current_price)
+                moneyness = current_price / strike_price
 
-            moneyness = current_price / strike_price
+                if position['type'] == 'call':
+                    greeks['delta'] = max(0.1, min(0.9, 0.5 + (moneyness - 1) * 0.4))
+                else:
+                    greeks['delta'] = min(-0.1, max(-0.9, -0.5 + (1 - moneyness) * 0.4))
 
-            if moneyness < 0.8:  # Deep ITM
-                greeks['delta'] = -0.85
-                greeks['gamma'] = 0.05
-            elif moneyness < 1.0:  # ITM
-                greeks['delta'] = -0.65
-                greeks['gamma'] = 0.12
-            elif moneyness < 1.05:  # ATM
-                greeks['delta'] = -0.50
-                greeks['gamma'] = 0.15
-            elif moneyness < 1.2:  # OTM
-                greeks['delta'] = -0.25
-                greeks['gamma'] = 0.10
-            else:  # Deep OTM
-                greeks['delta'] = -0.10
-                greeks['gamma'] = 0.03
-
-            greeks['vega'] = 15.0 + (0.95 - abs(moneyness - 1.0)) * 10
-            greeks['theta'] = -8.0 - greeks['vega'] * 0.3
+                greeks['gamma'] = 0.1 if abs(moneyness - 1) < 0.1 else 0.05
+                greeks['vega'] = 20.0
+                greeks['theta'] = -5.0
 
         return greeks
 
@@ -332,19 +381,32 @@ class PortfolioData:
 
         for pos in self.positions:
             try:
-                current_price = self.market_data.get_price(pos['symbol'])
-                market_value = pos['quantity'] * current_price
-                pnl = market_value - (pos['quantity'] * pos['avg_cost'])
+                underlying_price = self.market_data.get_price(pos['symbol'])
+
+                # Calculate market value based on position type
+                if pos['type'] in ['call', 'put']:
+                    # For options: calculate option price using Black-Scholes
+                    option_price = self._calculate_option_price(pos, underlying_price)
+                    market_value = pos['quantity'] * option_price * 100  # 100 shares per contract
+                    current_price_display = option_price  # Display option price, not underlying
+                    # PnL based on premium paid vs current option value
+                    pnl = market_value - (pos['quantity'] * pos['avg_cost'] * 100)
+                else:
+                    # For stocks/crypto: use underlying price directly
+                    market_value = pos['quantity'] * underlying_price
+                    current_price_display = underlying_price
+                    pnl = market_value - (pos['quantity'] * pos['avg_cost'])
 
                 # Update Greeks based on current price
-                updated_greeks = self._calculate_greeks({**pos, 'current_price': current_price})
+                updated_greeks = self._calculate_greeks({**pos, 'underlying_price': underlying_price})
 
                 position_data = {
                     'id': pos['id'],
                     'symbol': pos['symbol'],
                     'type': pos['type'].title(),
                     'quantity': pos['quantity'],
-                    'currentPrice': current_price,
+                    'currentPrice': current_price_display,
+                    'underlyingPrice': underlying_price,  # Add underlying price for options
                     'marketValue': market_value,
                     'pnl': pnl,
                     'avgCost': pos['avg_cost'],
@@ -377,8 +439,15 @@ class PortfolioData:
         total_value = 0
         for pos in self.positions:
             try:
-                current_price = self.market_data.get_price(pos['symbol'])
-                total_value += pos['quantity'] * current_price
+                underlying_price = self.market_data.get_price(pos['symbol'])
+
+                if pos['type'] in ['call', 'put']:
+                    # For options: calculate option price using Black-Scholes
+                    option_price = self._calculate_option_price(pos, underlying_price)
+                    total_value += pos['quantity'] * option_price * 100  # 100 shares per contract
+                else:
+                    # For stocks/crypto: use underlying price directly
+                    total_value += pos['quantity'] * underlying_price
             except Exception as e:
                 logger.error(f"Error calculating value for {pos.get('symbol', 'unknown')}: {e}")
         return total_value
@@ -390,16 +459,16 @@ class PortfolioData:
         for pos in self.positions:
             try:
                 # Get updated Greeks based on current market conditions
-                current_price = self.market_data.get_price(pos['symbol'])
-                updated_greeks = self._calculate_greeks({**pos, 'current_price': current_price})
+                underlying_price = self.market_data.get_price(pos['symbol'])
+                updated_greeks = self._calculate_greeks({**pos, 'underlying_price': underlying_price})
 
-                # Weight Greeks by position size and current price
-                position_value = abs(pos['quantity'] * current_price)
+                # For options, multiply by 100 (shares per contract)
+                multiplier = 100 if pos['type'] in ['call', 'put'] else 1
 
-                greeks['delta'] += updated_greeks['delta'] * pos['quantity']
-                greeks['gamma'] += updated_greeks['gamma'] * pos['quantity']
-                greeks['vega'] += updated_greeks['vega'] * pos['quantity']
-                greeks['theta'] += updated_greeks['theta'] * pos['quantity']
+                greeks['delta'] += updated_greeks['delta'] * pos['quantity'] * multiplier
+                greeks['gamma'] += updated_greeks['gamma'] * pos['quantity'] * multiplier
+                greeks['vega'] += updated_greeks['vega'] * pos['quantity'] * multiplier
+                greeks['theta'] += updated_greeks['theta'] * pos['quantity'] * multiplier
             except Exception as e:
                 logger.error(f"Error calculating Greeks for {pos.get('symbol', 'unknown')}: {e}")
 

@@ -616,10 +616,24 @@ class PortfolioApp {
 
     createPositionRow(position) {
         const row = document.createElement('tr');
+
+        // Determine what to show in Strike/Underlying column
+        let strikeUnderlyingDisplay = '';
+        if (position.type === 'Call' || position.type === 'Put') {
+            // For options: show Strike / Underlying Price
+            const strikePrice = position.strikePrice ? `$${position.strikePrice.toFixed(2)}` : 'N/A';
+            const underlyingPrice = position.underlyingPrice ? `$${position.underlyingPrice.toFixed(2)}` : 'N/A';
+            strikeUnderlyingDisplay = `${strikePrice} / ${underlyingPrice}`;
+        } else {
+            // For stocks/crypto: show dash
+            strikeUnderlyingDisplay = '-';
+        }
+
         row.innerHTML = `
             <td>${position.symbol}</td>
             <td>${position.type}</td>
             <td>${position.quantity}</td>
+            <td>${strikeUnderlyingDisplay}</td>
             <td>$${position.currentPrice.toFixed(2)}</td>
             <td>$${position.marketValue.toLocaleString()}</td>
             <td class="${position.pnl >= 0 ? 'text-success' : 'text-danger'}">
