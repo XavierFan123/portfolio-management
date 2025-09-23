@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Project Cerberus - Portfolio Management</title>
+    <title>Unispark Z2 System - Advanced Portfolio Management</title>
     <link rel="icon" type="image/x-icon" href="static/favicon.ico">
     <link rel="stylesheet" href="static/css/style.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -13,8 +13,8 @@
     <nav class="navbar">
         <div class="nav-container">
             <div class="nav-brand">
-                <i class="fas fa-shield-alt"></i>
-                <span>Project Cerberus</span>
+                <i class="fas fa-rocket"></i>
+                <span>Unispark Z2</span>
             </div>
             <div class="nav-menu" id="nav-menu">
                 <a href="#dashboard" class="nav-link active">Dashboard</a>
@@ -337,6 +337,56 @@
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Add Position</button>
                     <button type="button" class="btn btn-secondary" id="cancel-add">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Position Modal -->
+    <div id="edit-position-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Edit Position</h3>
+                <span class="close">&times;</span>
+            </div>
+            <form id="edit-position-form">
+                <input type="hidden" id="edit-position-id" name="position_id">
+
+                <div class="form-group">
+                    <label for="edit-symbol">Symbol</label>
+                    <input type="text" id="edit-symbol" name="symbol" readonly>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-position-type">Position Type</label>
+                    <select id="edit-position-type" name="type" disabled>
+                        <option value="stock">Stock</option>
+                        <option value="crypto">Cryptocurrency</option>
+                        <option value="call">Call Option</option>
+                        <option value="put">Put Option</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit-quantity">Quantity *</label>
+                    <input type="number" step="any" id="edit-quantity" name="quantity" required>
+                </div>
+
+                <!-- Stock/Crypto fields -->
+                <div class="form-group" id="edit-avg-cost-group">
+                    <label for="edit-avg-cost">Average Cost *</label>
+                    <input type="number" step="0.01" id="edit-avg-cost" name="avg_cost" required>
+                </div>
+
+                <!-- Option fields -->
+                <div class="form-group" id="edit-strike-price-group" style="display: none;">
+                    <label for="edit-strike-price">Strike Price</label>
+                    <input type="number" step="0.01" id="edit-strike-price" name="strike_price" readonly>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Update Position</button>
+                    <button type="button" class="btn btn-secondary" id="cancel-edit">Cancel</button>
                 </div>
             </form>
         </div>

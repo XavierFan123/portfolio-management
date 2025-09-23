@@ -1,4 +1,4 @@
-# Project Cerberus - Portfolio Management System
+# Unispark Z2 System - Advanced Portfolio Management
 
 A sophisticated multi-agent portfolio management and risk control system designed for options trading and real-time risk monitoring.
 

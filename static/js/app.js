@@ -85,6 +85,11 @@ class PortfolioApp {
     }
 
     setupModals() {
+        this.setupAddPositionModal();
+        this.setupEditPositionModal();
+    }
+
+    setupAddPositionModal() {
         const addPositionModal = document.getElementById('add-position-modal');
         const addPositionBtn = document.getElementById('add-position-btn');
         const closeBtn = addPositionModal?.querySelector('.close');
@@ -136,6 +141,45 @@ class PortfolioApp {
             addPositionForm.addEventListener('submit', (e) => {
                 e.preventDefault();
                 this.addPosition();
+            });
+        }
+    }
+
+    setupEditPositionModal() {
+        const editPositionModal = document.getElementById('edit-position-modal');
+        const closeBtn = editPositionModal?.querySelector('.close');
+        const cancelBtn = document.getElementById('cancel-edit');
+        const editPositionForm = document.getElementById('edit-position-form');
+
+        // Close modal
+        const closeModal = () => {
+            if (editPositionModal) {
+                editPositionModal.style.display = 'none';
+            }
+            if (editPositionForm) {
+                editPositionForm.reset();
+            }
+        };
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeModal);
+        }
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', closeModal);
+        }
+
+        // Close modal when clicking outside
+        window.addEventListener('click', (e) => {
+            if (e.target === editPositionModal) {
+                closeModal();
+            }
+        });
+
+        // Handle form submission
+        if (editPositionForm) {
+            editPositionForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.updatePosition();
             });
         }
     }
@@ -662,9 +706,89 @@ class PortfolioApp {
     }
 
     async editPosition(id) {
-        // Implement position editing
-        console.log('Edit position:', id);
-        this.showNotification('Edit functionality coming soon', 'info');
+        try {
+            // Fetch position data
+            const response = await fetch(`/api/positions/${id}`);
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                const position = data.position;
+
+                // Populate the edit form
+                document.getElementById('edit-position-id').value = position.id;
+                document.getElementById('edit-symbol').value = position.symbol;
+                document.getElementById('edit-position-type').value = position.type;
+                document.getElementById('edit-quantity').value = position.quantity;
+                document.getElementById('edit-avg-cost').value = position.avg_cost;
+
+                // Handle different position types
+                const editAvgCostGroup = document.getElementById('edit-avg-cost-group');
+                const editStrikePriceGroup = document.getElementById('edit-strike-price-group');
+
+                if (position.type === 'call' || position.type === 'put') {
+                    if (editAvgCostGroup) editAvgCostGroup.style.display = 'none';
+                    if (editStrikePriceGroup) {
+                        editStrikePriceGroup.style.display = 'block';
+                        document.getElementById('edit-strike-price').value = position.strike_price || '';
+                    }
+                } else {
+                    if (editAvgCostGroup) editAvgCostGroup.style.display = 'block';
+                    if (editStrikePriceGroup) editStrikePriceGroup.style.display = 'none';
+                }
+
+                // Show the modal
+                const editModal = document.getElementById('edit-position-modal');
+                if (editModal) {
+                    editModal.style.display = 'block';
+                }
+            } else {
+                this.showNotification('Error loading position data: ' + data.error, 'error');
+            }
+        } catch (error) {
+            console.error('Error editing position:', error);
+            this.showNotification('Network error while loading position data', 'error');
+        }
+    }
+
+    async updatePosition() {
+        const form = document.getElementById('edit-position-form');
+        if (!form) return;
+
+        const formData = new FormData(form);
+        const positionId = formData.get('position_id');
+
+        // Build update object
+        const updates = {
+            quantity: parseFloat(formData.get('quantity')),
+            avg_cost: parseFloat(formData.get('avg_cost'))
+        };
+
+        try {
+            const response = await fetch(`/api/positions/${positionId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(updates)
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                // Close modal and refresh portfolio
+                const modal = document.getElementById('edit-position-modal');
+                if (modal) modal.style.display = 'none';
+                form.reset();
+                this.updatePortfolio();
+                this.updateDashboard(); // Update dashboard metrics
+                this.showNotification('Position updated successfully', 'success');
+            } else {
+                this.showNotification('Error updating position: ' + (data.error || data.message || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Error updating position:', error);
+            this.showNotification('Network error while updating position', 'error');
+        }
     }
 
     async deletePosition(id) {
