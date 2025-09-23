@@ -23,10 +23,12 @@ class PortfolioApp {
         const navLinks = document.querySelectorAll('.nav-link');
 
         // Mobile menu toggle
-        navToggle?.addEventListener('click', () => {
-            navMenu.classList.toggle('active');
-            navToggle.classList.toggle('active');
-        });
+        if (navToggle && navMenu) {
+            navToggle.addEventListener('click', () => {
+                navMenu.classList.toggle('active');
+                navToggle.classList.toggle('active');
+            });
+        }
 
         // Navigation link handling
         navLinks.forEach(link => {
@@ -40,8 +42,10 @@ class PortfolioApp {
                 link.classList.add('active');
 
                 // Close mobile menu
-                navMenu.classList.remove('active');
-                navToggle.classList.remove('active');
+                if (navMenu && navToggle) {
+                    navMenu.classList.remove('active');
+                    navToggle.classList.remove('active');
+                }
             });
         });
     }
@@ -88,18 +92,28 @@ class PortfolioApp {
         const addPositionForm = document.getElementById('add-position-form');
 
         // Open modal
-        addPositionBtn?.addEventListener('click', () => {
-            addPositionModal.style.display = 'block';
-        });
+        if (addPositionBtn && addPositionModal) {
+            addPositionBtn.addEventListener('click', () => {
+                addPositionModal.style.display = 'block';
+            });
+        }
 
         // Close modal
         const closeModal = () => {
-            addPositionModal.style.display = 'none';
-            addPositionForm?.reset();
+            if (addPositionModal) {
+                addPositionModal.style.display = 'none';
+            }
+            if (addPositionForm) {
+                addPositionForm.reset();
+            }
         };
 
-        closeBtn?.addEventListener('click', closeModal);
-        cancelBtn?.addEventListener('click', closeModal);
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeModal);
+        }
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', closeModal);
+        }
 
         // Close modal when clicking outside
         window.addEventListener('click', (e) => {
@@ -109,10 +123,12 @@ class PortfolioApp {
         });
 
         // Handle form submission
-        addPositionForm?.addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.addPosition();
-        });
+        if (addPositionForm) {
+            addPositionForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.addPosition();
+            });
+        }
     }
 
     setupCharts() {
@@ -135,6 +151,7 @@ class PortfolioApp {
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    aspectRatio: 2,
                     plugins: {
                         legend: {
                             display: false
@@ -173,6 +190,7 @@ class PortfolioApp {
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    aspectRatio: 1,
                     plugins: {
                         legend: {
                             position: 'bottom'
@@ -206,6 +224,7 @@ class PortfolioApp {
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    aspectRatio: 2,
                     scales: {
                         y: {
                             ticks: {
@@ -222,18 +241,28 @@ class PortfolioApp {
 
     setupEventListeners() {
         // Refresh buttons
-        document.getElementById('refresh-risk-btn')?.addEventListener('click', () => {
-            this.updateRiskAnalysis();
-        });
+        const refreshRiskBtn = document.getElementById('refresh-risk-btn');
+        if (refreshRiskBtn) {
+            refreshRiskBtn.addEventListener('click', () => {
+                this.updateRiskAnalysis();
+            });
+        }
 
         // Monitoring controls
-        document.getElementById('start-monitoring-btn')?.addEventListener('click', () => {
-            this.startMonitoring();
-        });
+        const startMonitoringBtn = document.getElementById('start-monitoring-btn');
+        const stopMonitoringBtn = document.getElementById('stop-monitoring-btn');
 
-        document.getElementById('stop-monitoring-btn')?.addEventListener('click', () => {
-            this.stopMonitoring();
-        });
+        if (startMonitoringBtn) {
+            startMonitoringBtn.addEventListener('click', () => {
+                this.startMonitoring();
+            });
+        }
+
+        if (stopMonitoringBtn) {
+            stopMonitoringBtn.addEventListener('click', () => {
+                this.stopMonitoring();
+            });
+        }
     }
 
     setupWebSocket() {
@@ -279,33 +308,119 @@ class PortfolioApp {
     }
 
     async updateDashboard() {
-        // Simulate API call to get dashboard data
-        const data = await this.fetchDashboardData();
+        try {
+            // Simulate API call to get dashboard data
+            const response = await fetch('/api/dashboard');
+            const data = await response.json();
 
-        // Update metrics
-        document.getElementById('portfolio-value').textContent = '$' + data.portfolioValue.toLocaleString();
-        document.getElementById('var-value').textContent = '$' + data.var.toLocaleString();
-        document.getElementById('delta-value').textContent = data.delta.toFixed(2);
-        document.getElementById('gamma-value').textContent = data.gamma.toFixed(2);
+            if (data.status === 'success') {
+                // Update metrics
+                const portfolioValueEl = document.getElementById('portfolio-value');
+                const varValueEl = document.getElementById('var-value');
+                const deltaValueEl = document.getElementById('delta-value');
+                const gammaValueEl = document.getElementById('gamma-value');
+
+                if (portfolioValueEl) portfolioValueEl.textContent = '$' + data.portfolioValue.toLocaleString();
+                if (varValueEl) varValueEl.textContent = '$' + data.var.toLocaleString();
+                if (deltaValueEl) deltaValueEl.textContent = data.delta.toFixed(2);
+                if (gammaValueEl) gammaValueEl.textContent = data.gamma.toFixed(2);
+            }
+        } catch (error) {
+            console.log('Using demo data for dashboard');
+            // Use demo data if API is not available
+            const portfolioValueEl = document.getElementById('portfolio-value');
+            const varValueEl = document.getElementById('var-value');
+            const deltaValueEl = document.getElementById('delta-value');
+            const gammaValueEl = document.getElementById('gamma-value');
+
+            if (portfolioValueEl) portfolioValueEl.textContent = '$125,420.50';
+            if (varValueEl) varValueEl.textContent = '$3,245.80';
+            if (deltaValueEl) deltaValueEl.textContent = '0.42';
+            if (gammaValueEl) gammaValueEl.textContent = '0.12';
+        }
     }
 
     async updatePortfolio() {
-        const positions = await this.fetchPositions();
-        const tbody = document.getElementById('positions-tbody');
+        try {
+            const response = await fetch('/api/positions');
+            const data = await response.json();
 
-        if (tbody) {
-            tbody.innerHTML = '';
-            positions.forEach(position => {
-                const row = this.createPositionRow(position);
-                tbody.appendChild(row);
-            });
+            if (data.status === 'success') {
+                const tbody = document.getElementById('positions-tbody');
+                if (tbody) {
+                    tbody.innerHTML = '';
+                    data.positions.forEach(position => {
+                        const row = this.createPositionRow(position);
+                        tbody.appendChild(row);
+                    });
+                }
+            }
+        } catch (error) {
+            console.log('Using demo data for portfolio');
+            // Use demo data if API is not available
+            const positions = [
+                {
+                    id: '1',
+                    symbol: 'MSTR',
+                    type: 'Stock',
+                    quantity: 100,
+                    currentPrice: 850.25,
+                    marketValue: 85025,
+                    pnl: 5420,
+                    delta: 0.85,
+                    gamma: 0.02
+                },
+                {
+                    id: '2',
+                    symbol: 'MSTR 850C',
+                    type: 'Call',
+                    quantity: 10,
+                    currentPrice: 25.50,
+                    marketValue: 25500,
+                    pnl: -1200,
+                    delta: 0.65,
+                    gamma: 0.15
+                }
+            ];
+
+            const tbody = document.getElementById('positions-tbody');
+            if (tbody) {
+                tbody.innerHTML = '';
+                positions.forEach(position => {
+                    const row = this.createPositionRow(position);
+                    tbody.appendChild(row);
+                });
+            }
         }
     }
 
     async updateRiskAnalysis() {
         // Update VaR values and Greeks
-        const riskData = await this.fetchRiskData();
-        // Update UI with risk data
+        try {
+            const response = await fetch('/api/risk');
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                // Update VaR displays
+                const varItems = document.querySelectorAll('.var-item .var-value');
+                if (varItems.length >= 3) {
+                    varItems[0].textContent = '$' + data.var95_1d.toLocaleString();
+                    varItems[1].textContent = '$' + data.var99_1d.toLocaleString();
+                    varItems[2].textContent = '$' + data.var95_10d.toLocaleString();
+                }
+
+                // Update Greeks
+                const greekItems = document.querySelectorAll('.greek-item .greek-value');
+                if (greekItems.length >= 4) {
+                    greekItems[0].textContent = data.delta.toFixed(2);
+                    greekItems[1].textContent = data.gamma.toFixed(2);
+                    greekItems[2].textContent = data.vega.toFixed(1);
+                    greekItems[3].textContent = data.theta.toFixed(1);
+                }
+            }
+        } catch (error) {
+            console.log('Using demo data for risk analysis');
+        }
     }
 
     async updateMonitoring() {
@@ -316,15 +431,23 @@ class PortfolioApp {
 
     updateHealthIndicators() {
         // Simulate health status updates
-        const indicators = document.querySelectorAll('.health-item .status-dot');
-        indicators.forEach(dot => {
-            // Randomly change status for demo
-            if (Math.random() > 0.95) {
-                dot.className = 'status-dot offline';
-                dot.nextElementSibling.textContent = 'Offline';
-            } else {
-                dot.className = 'status-dot online';
-                dot.nextElementSibling.textContent = 'Online';
+        const healthItems = document.querySelectorAll('.health-item');
+        healthItems.forEach(item => {
+            const statusIndicator = item.querySelector('.status-indicator');
+            if (statusIndicator) {
+                const dot = statusIndicator.querySelector('.status-dot');
+                const textSpan = statusIndicator.querySelector('span:last-child');
+
+                if (dot && textSpan) {
+                    // Randomly change status for demo
+                    if (Math.random() > 0.95) {
+                        dot.className = 'status-dot offline';
+                        textSpan.textContent = 'Offline';
+                    } else {
+                        dot.className = 'status-dot online';
+                        textSpan.textContent = 'Online';
+                    }
+                }
             }
         });
     }
@@ -353,16 +476,19 @@ class PortfolioApp {
 
     updatePerformanceMetrics() {
         // Update performance metrics with random values for demo
-        const metrics = {
-            'Update Frequency': Math.floor(Math.random() * 5 + 8) + 's',
-            'Processing Time': Math.floor(Math.random() * 10 + 10) + 'ms',
-            'Cache Hit Rate': (Math.random() * 5 + 90).toFixed(1) + '%'
-        };
+        const perfItems = document.querySelectorAll('.perf-item');
+        const metrics = [
+            Math.floor(Math.random() * 5 + 8) + 's',
+            Math.floor(Math.random() * 10 + 10) + 'ms',
+            (Math.random() * 5 + 90).toFixed(1) + '%'
+        ];
 
-        document.querySelectorAll('.perf-item').forEach((item, index) => {
-            const key = Object.keys(metrics)[index];
-            if (key) {
-                item.lastElementChild.textContent = metrics[key];
+        perfItems.forEach((item, index) => {
+            if (index < metrics.length) {
+                const valueSpan = item.querySelector('span:last-child');
+                if (valueSpan) {
+                    valueSpan.textContent = metrics[index];
+                }
             }
         });
     }
@@ -400,10 +526,15 @@ class PortfolioApp {
         const delta = 0.42 + (Math.random() - 0.5) * 0.1;
         const gamma = 0.12 + (Math.random() - 0.5) * 0.02;
 
-        document.getElementById('portfolio-value').textContent = '$' + portfolioValue.toLocaleString();
-        document.getElementById('var-value').textContent = '$' + var95.toLocaleString();
-        document.getElementById('delta-value').textContent = delta.toFixed(2);
-        document.getElementById('gamma-value').textContent = gamma.toFixed(2);
+        const portfolioValueEl = document.getElementById('portfolio-value');
+        const varValueEl = document.getElementById('var-value');
+        const deltaValueEl = document.getElementById('delta-value');
+        const gammaValueEl = document.getElementById('gamma-value');
+
+        if (portfolioValueEl) portfolioValueEl.textContent = '$' + portfolioValue.toLocaleString();
+        if (varValueEl) varValueEl.textContent = '$' + var95.toLocaleString();
+        if (deltaValueEl) deltaValueEl.textContent = delta.toFixed(2);
+        if (gammaValueEl) gammaValueEl.textContent = gamma.toFixed(2);
     }
 
     createPositionRow(position) {
@@ -433,6 +564,8 @@ class PortfolioApp {
 
     async addPosition() {
         const form = document.getElementById('add-position-form');
+        if (!form) return;
+
         const formData = new FormData(form);
 
         const position = {
@@ -443,15 +576,26 @@ class PortfolioApp {
         };
 
         try {
-            // In a real app, this would make an API call to your Python backend
-            await this.submitPosition(position);
+            const response = await fetch('/api/positions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(position)
+            });
 
-            // Close modal and refresh portfolio
-            document.getElementById('add-position-modal').style.display = 'none';
-            form.reset();
-            this.updatePortfolio();
+            const data = await response.json();
 
-            this.showNotification('Position added successfully', 'success');
+            if (data.status === 'success') {
+                // Close modal and refresh portfolio
+                const modal = document.getElementById('add-position-modal');
+                if (modal) modal.style.display = 'none';
+                form.reset();
+                this.updatePortfolio();
+                this.showNotification('Position added successfully', 'success');
+            } else {
+                this.showNotification('Error adding position: ' + data.error, 'error');
+            }
         } catch (error) {
             this.showNotification('Error adding position', 'error');
         }
@@ -460,14 +604,24 @@ class PortfolioApp {
     async editPosition(id) {
         // Implement position editing
         console.log('Edit position:', id);
+        this.showNotification('Edit functionality coming soon', 'info');
     }
 
     async deletePosition(id) {
         if (confirm('Are you sure you want to delete this position?')) {
             try {
-                await this.removePosition(id);
-                this.updatePortfolio();
-                this.showNotification('Position deleted successfully', 'success');
+                const response = await fetch(`/api/positions/${id}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    this.updatePortfolio();
+                    this.showNotification('Position deleted successfully', 'success');
+                } else {
+                    this.showNotification('Error deleting position: ' + data.error, 'error');
+                }
             } catch (error) {
                 this.showNotification('Error deleting position', 'error');
             }
@@ -512,80 +666,6 @@ class PortfolioApp {
             notification.remove();
         }, 3000);
     }
-
-    // Mock API functions - in a real app, these would call your Python backend
-    async fetchDashboardData() {
-        return {
-            portfolioValue: 125420.50,
-            var: 3245.80,
-            delta: 0.42,
-            gamma: 0.12
-        };
-    }
-
-    async fetchPositions() {
-        return [
-            {
-                id: '1',
-                symbol: 'MSTR',
-                type: 'Stock',
-                quantity: 100,
-                currentPrice: 850.25,
-                marketValue: 85025,
-                pnl: 5420,
-                delta: 0.85,
-                gamma: 0.02
-            },
-            {
-                id: '2',
-                symbol: 'MSTR 850C',
-                type: 'Call',
-                quantity: 10,
-                currentPrice: 25.50,
-                marketValue: 25500,
-                pnl: -1200,
-                delta: 0.65,
-                gamma: 0.15
-            },
-            {
-                id: '3',
-                symbol: 'BTC-USD',
-                type: 'Crypto',
-                quantity: 0.5,
-                currentPrice: 65420.30,
-                marketValue: 32710,
-                pnl: 2150,
-                delta: 1.0,
-                gamma: 0.0
-            }
-        ];
-    }
-
-    async fetchRiskData() {
-        return {
-            var95_1d: 3245.80,
-            var99_1d: 4892.15,
-            var95_10d: 10267.34,
-            delta: 0.42,
-            gamma: 0.12,
-            vega: 45.8,
-            theta: -12.3
-        };
-    }
-
-    async submitPosition(position) {
-        // Mock API call - replace with actual endpoint
-        return new Promise((resolve) => {
-            setTimeout(resolve, 1000);
-        });
-    }
-
-    async removePosition(id) {
-        // Mock API call - replace with actual endpoint
-        return new Promise((resolve) => {
-            setTimeout(resolve, 500);
-        });
-    }
 }
 
 // Initialize the application when DOM is loaded
@@ -628,6 +708,20 @@ const notificationStyles = `
             transform: translateX(0);
             opacity: 1;
         }
+    }
+
+    .text-success {
+        color: var(--success-color) !important;
+    }
+
+    .text-danger {
+        color: var(--danger-color) !important;
+    }
+
+    .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+        margin: 0 0.125rem;
     }
 `;
 

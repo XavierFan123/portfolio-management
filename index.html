@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Project Cerberus - Portfolio Management</title>
+    <link rel="icon" type="image/x-icon" href="static/favicon.ico">
     <link rel="stylesheet" href="static/css/style.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -299,11 +300,11 @@
             <form id="add-position-form">
                 <div class="form-group">
                     <label for="symbol">Symbol</label>
-                    <input type="text" id="symbol" required>
+                    <input type="text" id="symbol" name="symbol" required>
                 </div>
                 <div class="form-group">
                     <label for="position-type">Type</label>
-                    <select id="position-type" required>
+                    <select id="position-type" name="position-type" required>
                         <option value="stock">Stock</option>
                         <option value="call">Call Option</option>
                         <option value="put">Put Option</option>
@@ -311,11 +312,11 @@
                 </div>
                 <div class="form-group">
                     <label for="quantity">Quantity</label>
-                    <input type="number" id="quantity" required>
+                    <input type="number" id="quantity" name="quantity" required>
                 </div>
                 <div class="form-group">
                     <label for="price">Price</label>
-                    <input type="number" step="0.01" id="price" required>
+                    <input type="number" step="0.01" id="price" name="price" required>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Add Position</button>

@@ -240,6 +240,12 @@ body {
     padding: 1.5rem;
     border-radius: 1rem;
     box-shadow: var(--shadow);
+    height: 400px;
+    position: relative;
+}
+
+.chart-container canvas {
+    max-height: 320px !important;
 }
 
 .chart-container h3 {
