@@ -90,11 +90,19 @@ class PortfolioApp {
         const closeBtn = addPositionModal?.querySelector('.close');
         const cancelBtn = document.getElementById('cancel-add');
         const addPositionForm = document.getElementById('add-position-form');
+        const positionTypeSelect = document.getElementById('position-type');
 
         // Open modal
         if (addPositionBtn && addPositionModal) {
             addPositionBtn.addEventListener('click', () => {
                 addPositionModal.style.display = 'block';
+            });
+        }
+
+        // Handle position type change
+        if (positionTypeSelect) {
+            positionTypeSelect.addEventListener('change', (e) => {
+                this.toggleFormFields(e.target.value);
             });
         }
 
@@ -105,6 +113,7 @@ class PortfolioApp {
             }
             if (addPositionForm) {
                 addPositionForm.reset();
+                this.toggleFormFields(''); // Reset form fields
             }
         };
 
@@ -128,6 +137,30 @@ class PortfolioApp {
                 e.preventDefault();
                 this.addPosition();
             });
+        }
+    }
+
+    toggleFormFields(positionType) {
+        const avgCostGroup = document.getElementById('avg-cost-group');
+        const strikePriceGroup = document.getElementById('strike-price-group');
+        const premiumGroup = document.getElementById('premium-group');
+        const strikePriceInput = document.getElementById('strike-price');
+
+        // Hide all optional fields first
+        if (avgCostGroup) avgCostGroup.style.display = 'none';
+        if (strikePriceGroup) strikePriceGroup.style.display = 'none';
+        if (premiumGroup) premiumGroup.style.display = 'none';
+
+        // Remove required attribute from all optional fields
+        if (strikePriceInput) strikePriceInput.removeAttribute('required');
+
+        // Show relevant fields based on position type
+        if (positionType === 'stock' || positionType === 'crypto') {
+            if (avgCostGroup) avgCostGroup.style.display = 'block';
+        } else if (positionType === 'call' || positionType === 'put') {
+            if (strikePriceGroup) strikePriceGroup.style.display = 'block';
+            if (premiumGroup) premiumGroup.style.display = 'block';
+            if (strikePriceInput) strikePriceInput.setAttribute('required', 'required');
         }
     }
 
@@ -568,12 +601,36 @@ class PortfolioApp {
 
         const formData = new FormData(form);
 
+        // Build position object based on form data
         const position = {
             symbol: formData.get('symbol'),
-            type: formData.get('position-type'),
-            quantity: parseFloat(formData.get('quantity')),
-            price: parseFloat(formData.get('price'))
+            type: formData.get('type'),
+            quantity: parseFloat(formData.get('quantity'))
         };
+
+        // Add optional fields based on position type
+        const positionType = formData.get('type');
+
+        if (positionType === 'stock' || positionType === 'crypto') {
+            const avgCost = formData.get('avg_cost');
+            if (avgCost && avgCost.trim() !== '') {
+                position.avg_cost = parseFloat(avgCost);
+            }
+        } else if (positionType === 'call' || positionType === 'put') {
+            const strikePrice = formData.get('strike_price');
+            const premium = formData.get('premium');
+
+            if (!strikePrice || strikePrice.trim() === '') {
+                this.showNotification('Strike price is required for options', 'error');
+                return;
+            }
+
+            position.strike_price = parseFloat(strikePrice);
+
+            if (premium && premium.trim() !== '') {
+                position.premium = parseFloat(premium);
+            }
+        }
 
         try {
             const response = await fetch('/api/positions', {
@@ -591,13 +648,16 @@ class PortfolioApp {
                 const modal = document.getElementById('add-position-modal');
                 if (modal) modal.style.display = 'none';
                 form.reset();
+                this.toggleFormFields(''); // Reset form fields
                 this.updatePortfolio();
+                this.updateDashboard(); // Update dashboard metrics
                 this.showNotification('Position added successfully', 'success');
             } else {
-                this.showNotification('Error adding position: ' + data.error, 'error');
+                this.showNotification('Error adding position: ' + (data.error || data.message || 'Unknown error'), 'error');
             }
         } catch (error) {
-            this.showNotification('Error adding position', 'error');
+            console.error('Error adding position:', error);
+            this.showNotification('Network error while adding position', 'error');
         }
     }
 

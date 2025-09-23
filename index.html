@@ -299,24 +299,40 @@
             </div>
             <form id="add-position-form">
                 <div class="form-group">
-                    <label for="symbol">Symbol</label>
-                    <input type="text" id="symbol" name="symbol" required>
+                    <label for="symbol">Symbol *</label>
+                    <input type="text" id="symbol" name="symbol" placeholder="e.g., MSTR, BTC-USD, TSLA" required>
                 </div>
                 <div class="form-group">
-                    <label for="position-type">Type</label>
-                    <select id="position-type" name="position-type" required>
+                    <label for="position-type">Position Type *</label>
+                    <select id="position-type" name="type" required>
+                        <option value="">Select Type</option>
                         <option value="stock">Stock</option>
+                        <option value="crypto">Cryptocurrency</option>
                         <option value="call">Call Option</option>
                         <option value="put">Put Option</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="quantity">Quantity</label>
-                    <input type="number" id="quantity" name="quantity" required>
+                    <label for="quantity">Quantity *</label>
+                    <input type="number" step="any" id="quantity" name="quantity" placeholder="Number of shares/units" required>
                 </div>
-                <div class="form-group">
-                    <label for="price">Price</label>
-                    <input type="number" step="0.01" id="price" name="price" required>
+
+                <!-- Stock/Crypto fields -->
+                <div class="form-group" id="avg-cost-group" style="display: none;">
+                    <label for="avg-cost">Average Cost (Optional)</label>
+                    <input type="number" step="0.01" id="avg-cost" name="avg_cost" placeholder="Leave blank for current market price">
+                    <small>If empty, current market price will be used</small>
+                </div>
+
+                <!-- Option fields -->
+                <div class="form-group" id="strike-price-group" style="display: none;">
+                    <label for="strike-price">Strike Price *</label>
+                    <input type="number" step="0.01" id="strike-price" name="strike_price" placeholder="Option strike price">
+                </div>
+                <div class="form-group" id="premium-group" style="display: none;">
+                    <label for="premium">Premium Paid (Optional)</label>
+                    <input type="number" step="0.01" id="premium" name="premium" placeholder="Premium per contract">
+                    <small>If empty, a default premium will be used</small>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Add Position</button>

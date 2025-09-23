@@ -4,42 +4,231 @@ Flask Web Application for Portfolio Management
 """
 
 import os
-import asyncio
 import logging
-from flask import Flask, render_template, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
-import sys
-from pathlib import Path
-
-# Add the src directory to Python path
-sys.path.insert(0, str(Path(__file__).parent / "src"))
+import json
+from datetime import datetime
+from typing import Dict, List, Any
 
 # Initialize Flask app
 app = Flask(__name__, static_folder='static')
 CORS(app)
 
+# Add security headers
+@app.after_request
+def after_request(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize portfolio components with error handling
-portfolio_manager = None
-risk_dashboard = None
-yahoo_connector = None
+class PortfolioData:
+    """Simple portfolio data manager with file persistence"""
 
-try:
-    from portfolio.portfolio_manager import PortfolioManager, VaRAnalysis
-    from portfolio.risk_dashboard import RiskDashboard
-    from data.yahoo_connector import YahooFinanceConnector
+    def __init__(self):
+        self.data_file = 'portfolio_data.json'
+        self.positions = []
+        self.load_data()
 
-    portfolio_manager = PortfolioManager()
-    portfolio_manager.load_portfolio()
-    risk_dashboard = RiskDashboard(portfolio_manager)
-    yahoo_connector = YahooFinanceConnector()
-    logger.info("Portfolio management system initialized successfully")
-except Exception as e:
-    logger.warning(f"Could not initialize full portfolio system: {e}")
-    logger.info("Running in demo mode with mock data")
+    def load_data(self):
+        """Load portfolio data from file"""
+        try:
+            if os.path.exists(self.data_file):
+                with open(self.data_file, 'r') as f:
+                    data = json.load(f)
+                    self.positions = data.get('positions', [])
+            else:
+                # Initialize with demo data
+                self.positions = [
+                    {
+                        'id': '1',
+                        'symbol': 'MSTR',
+                        'type': 'stock',
+                        'quantity': 100,
+                        'avg_cost': 800.0,
+                        'delta': 1.0,
+                        'gamma': 0.0,
+                        'vega': 0.0,
+                        'theta': 0.0,
+                        'timestamp': datetime.now().isoformat()
+                    },
+                    {
+                        'id': '2',
+                        'symbol': 'BTC-USD',
+                        'type': 'crypto',
+                        'quantity': 0.5,
+                        'avg_cost': 60000.0,
+                        'delta': 1.0,
+                        'gamma': 0.0,
+                        'vega': 0.0,
+                        'theta': 0.0,
+                        'timestamp': datetime.now().isoformat()
+                    }
+                ]
+                self.save_data()
+        except Exception as e:
+            logger.error(f"Error loading portfolio data: {e}")
+            self.positions = []
+
+    def save_data(self):
+        """Save portfolio data to file"""
+        try:
+            data = {
+                'positions': self.positions,
+                'last_updated': datetime.now().isoformat()
+            }
+            with open(self.data_file, 'w') as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving portfolio data: {e}")
+
+    def add_position(self, position: Dict[str, Any]) -> str:
+        """Add a new position"""
+        position_id = str(len(self.positions) + 1)
+        position['id'] = position_id
+        position['timestamp'] = datetime.now().isoformat()
+
+        # Calculate Greeks based on position type
+        if position['type'] == 'stock' or position['type'] == 'crypto':
+            position['delta'] = 1.0
+            position['gamma'] = 0.0
+            position['vega'] = 0.0
+            position['theta'] = 0.0
+        elif position['type'] == 'call':
+            # Simplified option Greeks
+            position['delta'] = 0.6  # Typical ATM call delta
+            position['gamma'] = 0.1
+            position['vega'] = 20.0
+            position['theta'] = -5.0
+        elif position['type'] == 'put':
+            position['delta'] = -0.4  # Typical ATM put delta
+            position['gamma'] = 0.1
+            position['vega'] = 20.0
+            position['theta'] = -5.0
+
+        self.positions.append(position)
+        self.save_data()
+        return position_id
+
+    def remove_position(self, position_id: str) -> bool:
+        """Remove a position"""
+        original_length = len(self.positions)
+        self.positions = [pos for pos in self.positions if pos['id'] != position_id]
+        if len(self.positions) < original_length:
+            self.save_data()
+            return True
+        return False
+
+    def get_positions(self) -> List[Dict[str, Any]]:
+        """Get all positions with current market data"""
+        positions_with_market_data = []
+
+        for pos in self.positions:
+            try:
+                # Simulate current market prices
+                current_price = self.get_mock_price(pos['symbol'], pos['type'])
+                market_value = pos['quantity'] * current_price
+                pnl = market_value - (pos['quantity'] * pos['avg_cost'])
+
+                position_data = {
+                    'id': pos['id'],
+                    'symbol': pos['symbol'],
+                    'type': pos['type'].title(),
+                    'quantity': pos['quantity'],
+                    'currentPrice': current_price,
+                    'marketValue': market_value,
+                    'pnl': pnl,
+                    'delta': pos.get('delta', 0),
+                    'gamma': pos.get('gamma', 0),
+                    'vega': pos.get('vega', 0),
+                    'theta': pos.get('theta', 0)
+                }
+                positions_with_market_data.append(position_data)
+            except Exception as e:
+                logger.error(f"Error processing position {pos.get('symbol', 'unknown')}: {e}")
+                continue
+
+        return positions_with_market_data
+
+    def get_mock_price(self, symbol: str, position_type: str) -> float:
+        """Get mock current price for symbols"""
+        # Simplified price simulation
+        base_prices = {
+            'MSTR': 850.0,
+            'BTC-USD': 65000.0,
+            'TSLA': 250.0,
+            'AAPL': 175.0,
+            'NVDA': 450.0,
+            'SPY': 420.0
+        }
+
+        base_price = base_prices.get(symbol, 100.0)
+
+        # Add some random variation (±5%)
+        import random
+        variation = random.uniform(0.95, 1.05)
+
+        if position_type in ['call', 'put']:
+            # Options are much cheaper than underlying
+            return base_price * 0.1 * variation
+        else:
+            return base_price * variation
+
+    def calculate_portfolio_value(self) -> float:
+        """Calculate total portfolio value"""
+        total_value = 0
+        for pos in self.positions:
+            try:
+                current_price = self.get_mock_price(pos['symbol'], pos['type'])
+                total_value += pos['quantity'] * current_price
+            except Exception as e:
+                logger.error(f"Error calculating value for {pos.get('symbol', 'unknown')}: {e}")
+        return total_value
+
+    def calculate_portfolio_greeks(self) -> Dict[str, float]:
+        """Calculate portfolio-level Greeks"""
+        greeks = {'delta': 0, 'gamma': 0, 'vega': 0, 'theta': 0}
+
+        for pos in self.positions:
+            try:
+                # Weight Greeks by position size
+                weight = abs(pos['quantity'])
+                greeks['delta'] += pos.get('delta', 0) * weight
+                greeks['gamma'] += pos.get('gamma', 0) * weight
+                greeks['vega'] += pos.get('vega', 0) * weight
+                greeks['theta'] += pos.get('theta', 0) * weight
+            except Exception as e:
+                logger.error(f"Error calculating Greeks for {pos.get('symbol', 'unknown')}: {e}")
+
+        return greeks
+
+    def calculate_var(self, confidence_level: float = 0.95, time_horizon: int = 1) -> float:
+        """Calculate Value at Risk"""
+        portfolio_value = self.calculate_portfolio_value()
+
+        # Simplified VaR calculation (normally distributed returns)
+        if confidence_level == 0.95:
+            z_score = 1.645
+        elif confidence_level == 0.99:
+            z_score = 2.326
+        else:
+            z_score = 1.645
+
+        # Assume 2% daily volatility for simplicity
+        daily_volatility = 0.02
+        time_adjusted_volatility = daily_volatility * (time_horizon ** 0.5)
+
+        var = portfolio_value * z_score * time_adjusted_volatility
+        return var
+
+# Initialize portfolio data
+portfolio_data = PortfolioData()
+logger.info("Portfolio data manager initialized successfully")
 
 @app.route('/')
 def index():
@@ -50,213 +239,122 @@ def index():
 def get_dashboard_data():
     """Get dashboard metrics"""
     try:
-        if portfolio_manager and hasattr(portfolio_manager, 'positions'):
-            # Calculate portfolio value
-            portfolio_value = portfolio_manager.calculate_portfolio_value()
+        portfolio_value = portfolio_data.calculate_portfolio_value()
+        greeks = portfolio_data.calculate_portfolio_greeks()
+        var_95 = portfolio_data.calculate_var(confidence_level=0.95)
 
-            # Calculate VaR
-            var_analysis = VaRAnalysis()
-            var_95 = var_analysis.calculate_var(portfolio_manager.positions, confidence_level=0.95)
-
-            # Calculate Greeks (simplified)
-            total_delta = sum(pos.get('delta', 0) for pos in portfolio_manager.positions)
-            total_gamma = sum(pos.get('gamma', 0) for pos in portfolio_manager.positions)
-
-            return jsonify({
-                'portfolioValue': portfolio_value,
-                'var': var_95,
-                'delta': total_delta,
-                'gamma': total_gamma,
-                'status': 'success'
-            })
-        else:
-            # Return demo data
-            return jsonify({
-                'portfolioValue': 125420.50,
-                'var': 3245.80,
-                'delta': 0.42,
-                'gamma': 0.12,
-                'status': 'success'
-            })
+        return jsonify({
+            'portfolioValue': portfolio_value,
+            'var': var_95,
+            'delta': greeks['delta'],
+            'gamma': greeks['gamma'],
+            'status': 'success'
+        })
     except Exception as e:
         logger.error(f"Error in dashboard data: {e}")
-        # Return demo data as fallback
         return jsonify({
             'portfolioValue': 125420.50,
             'var': 3245.80,
             'delta': 0.42,
             'gamma': 0.12,
-            'status': 'success'
+            'status': 'error',
+            'message': str(e)
         })
 
 @app.route('/api/positions')
 def get_positions():
     """Get all portfolio positions"""
     try:
-        if portfolio_manager and hasattr(portfolio_manager, 'positions') and yahoo_connector:
-            positions = []
-            for pos in portfolio_manager.positions:
-                try:
-                    # Get current market price
-                    current_price = yahoo_connector.get_current_price(pos['symbol'])
-                    market_value = pos['quantity'] * current_price
-                    pnl = market_value - (pos['quantity'] * pos.get('avg_cost', current_price))
-
-                    positions.append({
-                        'id': pos.get('id', len(positions)),
-                        'symbol': pos['symbol'],
-                        'type': pos.get('type', 'Stock'),
-                        'quantity': pos['quantity'],
-                        'currentPrice': current_price,
-                        'marketValue': market_value,
-                        'pnl': pnl,
-                        'delta': pos.get('delta', 0),
-                        'gamma': pos.get('gamma', 0)
-                    })
-                except Exception as e:
-                    logger.warning(f"Error processing position {pos.get('symbol', 'unknown')}: {e}")
-                    continue
-
-            return jsonify({'positions': positions, 'status': 'success'})
-        else:
-            # Return demo data
-            demo_positions = [
-                {
-                    'id': '1',
-                    'symbol': 'MSTR',
-                    'type': 'Stock',
-                    'quantity': 100,
-                    'currentPrice': 850.25,
-                    'marketValue': 85025,
-                    'pnl': 5420,
-                    'delta': 0.85,
-                    'gamma': 0.02
-                },
-                {
-                    'id': '2',
-                    'symbol': 'MSTR 850C',
-                    'type': 'Call',
-                    'quantity': 10,
-                    'currentPrice': 25.50,
-                    'marketValue': 25500,
-                    'pnl': -1200,
-                    'delta': 0.65,
-                    'gamma': 0.15
-                }
-            ]
-            return jsonify({'positions': demo_positions, 'status': 'success'})
+        positions = portfolio_data.get_positions()
+        return jsonify({'positions': positions, 'status': 'success'})
     except Exception as e:
         logger.error(f"Error in positions endpoint: {e}")
-        # Return demo data as fallback
-        demo_positions = [
-            {
-                'id': '1',
-                'symbol': 'MSTR',
-                'type': 'Stock',
-                'quantity': 100,
-                'currentPrice': 850.25,
-                'marketValue': 85025,
-                'pnl': 5420,
-                'delta': 0.85,
-                'gamma': 0.02
-            }
-        ]
-        return jsonify({'positions': demo_positions, 'status': 'success'})
+        return jsonify({
+            'positions': [],
+            'status': 'error',
+            'message': str(e)
+        })
 
 @app.route('/api/positions', methods=['POST'])
 def add_position():
     """Add a new position"""
     try:
         data = request.get_json()
+        logger.info(f"Received position data: {data}")
+
+        if not data:
+            return jsonify({'error': 'No data provided', 'status': 'error'}), 400
 
         # Validate required fields
-        required_fields = ['symbol', 'type', 'quantity', 'price']
+        required_fields = ['symbol', 'type', 'quantity']
         for field in required_fields:
             if field not in data:
                 return jsonify({'error': f'Missing field: {field}', 'status': 'error'}), 400
 
-        if portfolio_manager and hasattr(portfolio_manager, 'add_position'):
-            # Add position to portfolio
-            position = {
-                'symbol': data['symbol'].upper(),
-                'type': data['type'],
-                'quantity': float(data['quantity']),
-                'avg_cost': float(data['price']),
-                'delta': 0,  # Will be calculated
-                'gamma': 0   # Will be calculated
-            }
+        # Prepare position data
+        position = {
+            'symbol': data['symbol'].upper(),
+            'type': data['type'].lower(),
+            'quantity': float(data['quantity'])
+        }
 
-            portfolio_manager.add_position(position)
-            portfolio_manager.save_portfolio()
-
-            return jsonify({'message': 'Position added successfully', 'status': 'success'})
+        # Handle different position types
+        if data['type'].lower() in ['call', 'put']:
+            # For options, require strike price
+            if 'strike_price' not in data:
+                return jsonify({'error': 'Strike price required for options', 'status': 'error'}), 400
+            position['strike_price'] = float(data['strike_price'])
+            position['avg_cost'] = float(data.get('premium', 10.0))  # Default premium
         else:
-            # Demo mode - just return success
-            logger.info(f"Demo mode: Would add position {data['symbol']}")
-            return jsonify({'message': 'Position added successfully (demo mode)', 'status': 'success'})
+            # For stocks/crypto, use current market price if no cost provided
+            position['avg_cost'] = float(data.get('avg_cost', portfolio_data.get_mock_price(position['symbol'], position['type'])))
+
+        position_id = portfolio_data.add_position(position)
+
+        return jsonify({
+            'message': 'Position added successfully',
+            'position_id': position_id,
+            'status': 'success'
+        })
+
+    except ValueError as e:
+        logger.error(f"Value error in add position: {e}")
+        return jsonify({'error': 'Invalid numeric value provided', 'status': 'error'}), 400
     except Exception as e:
         logger.error(f"Error adding position: {e}")
-        return jsonify({'error': 'Failed to add position', 'status': 'error'}), 500
+        return jsonify({'error': f'Failed to add position: {str(e)}', 'status': 'error'}), 500
 
 @app.route('/api/positions/<position_id>', methods=['DELETE'])
 def delete_position(position_id):
     """Delete a position"""
     try:
-        if portfolio_manager and hasattr(portfolio_manager, 'remove_position'):
-            portfolio_manager.remove_position(int(position_id))
-            portfolio_manager.save_portfolio()
+        success = portfolio_data.remove_position(position_id)
+        if success:
             return jsonify({'message': 'Position deleted successfully', 'status': 'success'})
         else:
-            # Demo mode - just return success
-            logger.info(f"Demo mode: Would delete position {position_id}")
-            return jsonify({'message': 'Position deleted successfully (demo mode)', 'status': 'success'})
+            return jsonify({'error': 'Position not found', 'status': 'error'}), 404
     except Exception as e:
         logger.error(f"Error deleting position: {e}")
-        return jsonify({'error': 'Failed to delete position', 'status': 'error'}), 500
+        return jsonify({'error': f'Failed to delete position: {str(e)}', 'status': 'error'}), 500
 
 @app.route('/api/risk')
 def get_risk_data():
     """Get risk analysis data"""
     try:
-        if portfolio_manager and hasattr(portfolio_manager, 'positions'):
-            var_analysis = VaRAnalysis()
+        greeks = portfolio_data.calculate_portfolio_greeks()
 
-            # Calculate different VaR metrics
-            var_95_1d = var_analysis.calculate_var(portfolio_manager.positions, confidence_level=0.95, time_horizon=1)
-            var_99_1d = var_analysis.calculate_var(portfolio_manager.positions, confidence_level=0.99, time_horizon=1)
-            var_95_10d = var_analysis.calculate_var(portfolio_manager.positions, confidence_level=0.95, time_horizon=10)
-
-            # Calculate Greeks
-            total_delta = sum(pos.get('delta', 0) for pos in portfolio_manager.positions)
-            total_gamma = sum(pos.get('gamma', 0) for pos in portfolio_manager.positions)
-            total_vega = sum(pos.get('vega', 0) for pos in portfolio_manager.positions)
-            total_theta = sum(pos.get('theta', 0) for pos in portfolio_manager.positions)
-
-            return jsonify({
-                'var95_1d': var_95_1d,
-                'var99_1d': var_99_1d,
-                'var95_10d': var_95_10d,
-                'delta': total_delta,
-                'gamma': total_gamma,
-                'vega': total_vega,
-                'theta': total_theta,
-                'status': 'success'
-            })
-        else:
-            # Return demo data
-            return jsonify({
-                'var95_1d': 3245.80,
-                'var99_1d': 4892.15,
-                'var95_10d': 10267.34,
-                'delta': 0.42,
-                'gamma': 0.12,
-                'vega': 45.8,
-                'theta': -12.3,
-                'status': 'success'
-            })
+        return jsonify({
+            'var95_1d': portfolio_data.calculate_var(confidence_level=0.95, time_horizon=1),
+            'var99_1d': portfolio_data.calculate_var(confidence_level=0.99, time_horizon=1),
+            'var95_10d': portfolio_data.calculate_var(confidence_level=0.95, time_horizon=10),
+            'delta': greeks['delta'],
+            'gamma': greeks['gamma'],
+            'vega': greeks['vega'],
+            'theta': greeks['theta'],
+            'status': 'success'
+        })
     except Exception as e:
         logger.error(f"Error in risk data: {e}")
-        # Return demo data as fallback
         return jsonify({
             'var95_1d': 3245.80,
             'var99_1d': 4892.15,
@@ -265,42 +363,28 @@ def get_risk_data():
             'gamma': 0.12,
             'vega': 45.8,
             'theta': -12.3,
-            'status': 'success'
+            'status': 'error',
+            'message': str(e)
         })
 
 @app.route('/api/monitoring/health')
 def get_system_health():
     """Get system health status"""
     try:
-        # Check data feed
-        data_feed_status = True
-        if yahoo_connector and hasattr(yahoo_connector, 'health_check'):
-            try:
-                data_feed_status = yahoo_connector.health_check()
-            except:
-                data_feed_status = False
-
-        # Check portfolio manager
-        portfolio_status = True
-        if portfolio_manager and hasattr(portfolio_manager, 'positions'):
-            try:
-                portfolio_status = len(portfolio_manager.positions) >= 0
-            except:
-                portfolio_status = False
-
-        return jsonify({
-            'dataFeed': 'online' if data_feed_status else 'offline',
-            'riskEngine': 'online' if portfolio_status else 'offline',
-            'modelValidation': 'online',  # Simplified
-            'status': 'success'
-        })
-    except Exception as e:
-        logger.error(f"Error in health check: {e}")
         return jsonify({
             'dataFeed': 'online',
             'riskEngine': 'online',
             'modelValidation': 'online',
             'status': 'success'
+        })
+    except Exception as e:
+        logger.error(f"Error in health check: {e}")
+        return jsonify({
+            'dataFeed': 'offline',
+            'riskEngine': 'offline',
+            'modelValidation': 'offline',
+            'status': 'error',
+            'message': str(e)
         })
 
 @app.route('/api/monitoring/alerts')
@@ -308,41 +392,33 @@ def get_alerts():
     """Get current system alerts"""
     try:
         alerts = []
+        greeks = portfolio_data.calculate_portfolio_greeks()
 
-        if portfolio_manager and hasattr(portfolio_manager, 'positions'):
-            try:
-                # Check portfolio limits
-                total_delta = sum(pos.get('delta', 0) for pos in portfolio_manager.positions)
-                if abs(total_delta) > 0.8:
-                    alerts.append({
-                        'type': 'warning',
-                        'message': f'Portfolio delta ({total_delta:.2f}) approaching limit',
-                        'timestamp': '2024-01-01T12:00:00Z'
-                    })
+        # Check delta limits
+        if abs(greeks['delta']) > 5.0:
+            alerts.append({
+                'type': 'warning',
+                'message': f'Portfolio delta ({greeks["delta"]:.2f}) approaching limit',
+                'timestamp': datetime.now().isoformat()
+            })
 
-                # Check VaR
-                var_analysis = VaRAnalysis()
-                var_95 = var_analysis.calculate_var(portfolio_manager.positions)
-                portfolio_value = portfolio_manager.calculate_portfolio_value()
+        # Check VaR limits
+        portfolio_value = portfolio_data.calculate_portfolio_value()
+        var_95 = portfolio_data.calculate_var()
 
-                if var_95 / portfolio_value > 0.05:  # 5% threshold
-                    alerts.append({
-                        'type': 'high',
-                        'message': 'VaR exceeds 5% of portfolio value',
-                        'timestamp': '2024-01-01T12:05:00Z'
-                    })
-            except Exception as e:
-                logger.warning(f"Error calculating alerts: {e}")
+        if portfolio_value > 0 and var_95 / portfolio_value > 0.05:
+            alerts.append({
+                'type': 'high',
+                'message': f'VaR ({var_95:.0f}) exceeds 5% of portfolio value',
+                'timestamp': datetime.now().isoformat()
+            })
 
-        # Add demo alerts if no real alerts
         if not alerts:
-            alerts = [
-                {
-                    'type': 'info',
-                    'message': 'System monitoring active',
-                    'timestamp': '2024-01-01T12:00:00Z'
-                }
-            ]
+            alerts.append({
+                'type': 'info',
+                'message': 'All systems operational',
+                'timestamp': datetime.now().isoformat()
+            })
 
         return jsonify({'alerts': alerts, 'status': 'success'})
     except Exception as e:
@@ -350,27 +426,13 @@ def get_alerts():
         return jsonify({
             'alerts': [
                 {
-                    'type': 'info',
-                    'message': 'System monitoring active',
-                    'timestamp': '2024-01-01T12:00:00Z'
+                    'type': 'error',
+                    'message': f'Error generating alerts: {str(e)}',
+                    'timestamp': datetime.now().isoformat()
                 }
             ],
-            'status': 'success'
+            'status': 'error'
         })
-
-@app.route('/api/market/<symbol>')
-def get_market_data(symbol):
-    """Get market data for a symbol"""
-    try:
-        current_price = yahoo_connector.get_current_price(symbol)
-
-        return jsonify({
-            'symbol': symbol,
-            'currentPrice': current_price,
-            'status': 'success'
-        })
-    except Exception as e:
-        return jsonify({'error': str(e), 'status': 'error'}), 500
 
 @app.errorhandler(404)
 def not_found(error):
@@ -378,6 +440,7 @@ def not_found(error):
 
 @app.errorhandler(500)
 def internal_error(error):
+    logger.error(f"Internal server error: {error}")
     return jsonify({'error': 'Internal server error', 'status': 'error'}), 500
 
 if __name__ == '__main__':

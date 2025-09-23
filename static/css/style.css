@@ -558,6 +558,24 @@ body {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
+.form-group small {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.form-group input[placeholder],
+.form-group select[placeholder] {
+    color: var(--text-secondary);
+}
+
+.form-group input[required] + small::after,
+.form-group select[required] + small::after {
+    content: " *";
+    color: var(--danger-color);
+}
+
 .form-actions {
     padding: 1.5rem;
     border-top: 1px solid var(--border-color);
