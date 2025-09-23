@@ -21,16 +21,12 @@ from enum import Enum
 from dataclasses import dataclass
 
 # Numba JIT imports for performance optimization
-try:
-    from numba import jit, vectorize, float64
-    NUMBA_AVAILABLE = True
-except ImportError:
-    NUMBA_AVAILABLE = False
-    # Define dummy jit decorator for fallback
-    def jit(*args, **kwargs):
-        def decorator(func):
-            return func
-        return decorator
+NUMBA_AVAILABLE = False
+# Define dummy jit decorator for fallback
+def jit(*args, **kwargs):
+    def decorator(func):
+        return func
+    return decorator
 
 # Initialize Flask app
 app = Flask(__name__, static_folder='static')
@@ -339,14 +335,108 @@ class MarketDataProvider:
             logger.error(f"Error getting option market price: {e}")
             return None
 
-    def _fetch_option_from_yahoo(self, symbol: str, strike: float, expiry_date: str, option_type: str) -> Optional[float]:
-        """Fetch real option price from Yahoo Finance options chain"""
+    def _get_yahoo_crumb(self) -> Optional[str]:
+        """Get Yahoo Finance crumb for API authentication"""
         try:
-            # This would require Yahoo Finance options API
-            # For now, return None to use fallback
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            # First get a page to establish session
+            response = self.session.get('https://finance.yahoo.com/quote/AAPL', headers=headers, timeout=10)
+
+            # Extract crumb from the page
+            import re
+            crumb_match = re.search(r'"CrumbStore":{"crumb":"([^"]+)"}', response.text)
+            if crumb_match:
+                return crumb_match.group(1)
             return None
         except Exception as e:
-            logger.warning(f"Could not fetch real option price: {e}")
+            logger.debug(f"Could not get Yahoo crumb: {e}")
+            return None
+
+    def _fetch_option_from_yahoo(self, symbol: str, strike: float, expiry_date: str, option_type: str) -> Optional[float]:
+        """Fetch real option price from Yahoo Finance using yfinance library"""
+        try:
+            import yfinance as yf
+
+            # Create ticker object
+            ticker = yf.Ticker(symbol)
+
+            # Convert expiry_date to correct format
+            expiry = datetime.strptime(expiry_date, '%Y-%m-%d')
+            expiry_str = expiry.strftime('%Y-%m-%d')
+
+            # Get all available expiration dates
+            expirations = ticker.options
+            if not expirations:
+                logger.warning(f"No options available for {symbol}")
+                return None
+
+            # Find the closest expiration date to our target
+            target_date = expiry.date()
+            closest_expiry = None
+            min_diff = float('inf')
+
+            for exp_str in expirations:
+                exp_date = datetime.strptime(exp_str, '%Y-%m-%d').date()
+                diff = abs((exp_date - target_date).days)
+                if diff < min_diff:
+                    min_diff = diff
+                    closest_expiry = exp_str
+
+            if not closest_expiry:
+                logger.warning(f"No suitable expiration found for {symbol}")
+                return None
+
+            logger.info(f"Using expiration {closest_expiry} for {symbol} (requested: {expiry_str})")
+
+            # Get option chain for the closest expiry
+            if option_type.lower() == 'call':
+                options_chain = ticker.option_chain(closest_expiry).calls
+            else:
+                options_chain = ticker.option_chain(closest_expiry).puts
+
+            if options_chain.empty:
+                logger.warning(f"No {option_type} options found for {symbol} {closest_expiry}")
+                return None
+
+            # Find the option with matching or closest strike
+            closest_strike_idx = None
+            min_strike_diff = float('inf')
+
+            for idx, row in options_chain.iterrows():
+                strike_diff = abs(row['strike'] - strike)
+                if strike_diff < min_strike_diff:
+                    min_strike_diff = strike_diff
+                    closest_strike_idx = idx
+
+            if closest_strike_idx is None:
+                return None
+
+            option_row = options_chain.loc[closest_strike_idx]
+            actual_strike = option_row['strike']
+
+            # Get the option price (prefer lastPrice, fallback to bid-ask mid)
+            last_price = option_row.get('lastPrice', 0)
+            bid = option_row.get('bid', 0)
+            ask = option_row.get('ask', 0)
+
+            if last_price and last_price > 0:
+                logger.info(f"✅ Found {symbol} {option_type} ${actual_strike} market price: ${last_price:.2f} (yfinance)")
+                return float(last_price)
+            elif bid > 0 and ask > 0:
+                mid_price = (bid + ask) / 2
+                logger.info(f"✅ Found {symbol} {option_type} ${actual_strike} bid-ask mid: ${mid_price:.2f} (yfinance)")
+                return float(mid_price)
+            else:
+                logger.warning(f"No valid price data for {symbol} {option_type} ${actual_strike}")
+                return None
+
+        except ImportError:
+            logger.error("yfinance library not available")
+            return None
+        except Exception as e:
+            logger.warning(f"Could not fetch option price with yfinance: {e}")
             return None
 
     def _estimate_reasonable_option_price(self, symbol: str, strike: float, expiry_date: str, option_type: str) -> float:
@@ -520,25 +610,35 @@ class PortfolioData:
             # Calculate time to expiration
             T = self._calculate_time_to_expiration(position)
 
-            # Try to get market price and calculate implied volatility
+            # Get market price from Yahoo Finance
             market_price = self.market_data.get_option_market_price(
                 position['symbol'], K, expiry_date, position['type']
             )
 
             if market_price and market_price > 0.01:
-                # Use market price directly
+                # Use market price directly - this is what the user wants
                 logger.info(f"Using market price ${market_price:.2f} for {position['symbol']} {position['type']} {K}")
+
+                # Calculate and store implied volatility for this option
+                implied_vol = self.market_data.calculate_implied_volatility(
+                    market_price, S, K, T, r, q, position['type']
+                )
+                logger.info(f"Calculated implied volatility: {implied_vol:.1%}")
+
                 return market_price
             else:
-                # Fallback: use reasonable implied volatility for pricing
-                sigma = self._get_reasonable_implied_volatility(position['symbol'], S, K, T)
+                # If we can't get market price, use Black-Scholes with reasonable IV
+                logger.warning(f"No market price available for {position['symbol']} {position['type']} ${K}, using Black-Scholes pricing")
 
-                # Choose pricing model based on option style
-                option_style = position.get('option_style', 'american')
-                if option_style == 'european':
-                    return self._black_scholes_price(S, K, T, r, q, sigma, position['type'])
-                else:  # American option
-                    return self._binomial_american_price(S, K, T, r, q, sigma, position['type'])
+                # Get reasonable implied volatility based on market conditions
+                sigma = self._get_reasonable_implied_volatility(position['symbol'], S, K, T)
+                logger.info(f"Using estimated IV of {sigma:.1%} for {position['symbol']} {position['type']} ${K}")
+
+                # Use Black-Scholes pricing
+                theoretical_price = self._black_scholes_price(S, K, T, r, q, sigma, position['type'])
+                logger.info(f"Black-Scholes theoretical price: ${theoretical_price:.2f}")
+
+                return theoretical_price
 
         except Exception as e:
             logger.error(f"Error calculating option price: {e}")
