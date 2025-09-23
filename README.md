@@ -1,43 +1,52 @@
 # Unispark Z2 System - Advanced Portfolio Management
 
-A sophisticated multi-agent portfolio management and risk control system designed for options trading and real-time risk monitoring.
+A professional portfolio management system with **real market data integration** - completely eliminating simulated data patterns with authentic financial analysis.
 
-## System Architecture
+## 🚀 Real Market Data Integration
 
-Project Cerberus consists of five specialized agents working together under a central orchestrator:
+**All volatility, P&L attribution, and risk calculations now use REAL market data:**
 
-### Agents
+### ✅ Real Volatility System
+- **Historical Volatility**: Real market calculations from Yahoo Finance price data
+- **Implied Volatility**: Extracted from actual option chain data
+- **Rolling Windows**: 30/60/90/252 day realized volatility calculations
+- **No More Hardcoded Values**: Dynamic volatility based on market conditions
 
-1. **Chief Architect Agent** - System coordination and high-level decision making
-2. **Quantitative Modeler Agent** - Advanced risk models and option pricing
-3. **Greeks & Real-time Risk Agent** - Real-time Greeks monitoring and dynamic hedging
-4. **Data & Infrastructure Agent** - Data management and system performance
-5. **Model Validation & Governance Agent** - Model validation and compliance oversight
+### ✅ Factor Regression Model
+- **8-Factor Systematic Risk Model**: SPY, QQQ, IWM, VIX, BTC-USD, GLD, TLT, DXY
+- **Real Beta Calculations**: Linear regression on actual market factor returns
+- **Factor Attribution**: Track portfolio exposures to systematic risk sources
+- **Alpha & Tracking Error**: Professional risk-adjusted performance metrics
 
-### Features
+### ✅ Real P&L Attribution
+- **Daily P&L Breakdown**: Greeks-based attribution (Delta, Gamma, Theta, Vega)
+- **Factor P&L Impact**: Systematic factor contribution to portfolio P&L
+- **Greeks Accuracy Analysis**: Compare predicted vs actual P&L
+- **Portfolio Snapshots**: Track day-over-day position changes
 
-- **Real-time Options Greeks Monitoring** - Delta, Gamma, Vega, Theta, Rho tracking
-- **Advanced Option Pricing Models** - Black-Scholes, Heston, Jump Diffusion
-- **Risk Management** - VaR calculation, stress testing, limit monitoring
-- **MSTR-BTC Basis Risk Analysis** - Specialized monitoring for MSTR/Bitcoin correlation
-- **Automated Backtesting** - Model validation and performance analysis
-- **Real-time Data Feeds** - Yahoo Finance API integration
-- **Performance Monitoring** - System health and performance metrics
+### 🔧 Professional Features
+
+- **Real-time Options Greeks Monitoring** - Calculated with market-based volatility
+- **Market-Based Option Pricing** - Uses real implied volatility and market prices
+- **Professional Risk Management** - VaR with real correlation matrices
+- **MSTR-BTC Factor Analysis** - Real correlation tracking and factor exposures
+- **Historical Data Accumulation** - Professional time series data management
+- **Advanced Portfolio Analytics** - Institutional-grade risk analytics
 
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
-- Optional: Redis for caching
-- Market data access (Yahoo Finance API included)
+- Internet connection for Yahoo Finance API
+- All dependencies included in requirements.txt
 
 ### Installation
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
-cd portfoliomanagement
+git clone https://github.com/XavierFan123/portfolio-management.git
+cd portfolio-management
 ```
 
 2. Install dependencies:
@@ -45,16 +54,42 @@ cd portfoliomanagement
 pip install -r requirements.txt
 ```
 
-3. Set up environment variables:
+3. Run the Flask application:
 ```bash
-cp .env.example .env
-# Edit .env with your configuration
+python app.py
 ```
 
-4. Run the system:
-```bash
-python main.py
+4. Open your browser and navigate to:
 ```
+http://localhost:5000
+```
+
+### 🔥 Real Data System Initialization
+
+After starting the app, initialize the real market data systems:
+
+1. **Initialize Volatility Data**:
+```bash
+POST http://localhost:5000/api/volatility/initialize
+```
+
+2. **Update Factor Analysis**:
+```bash
+POST http://localhost:5000/api/factor/update
+```
+
+3. **Run P&L Attribution**:
+```bash
+POST http://localhost:5000/api/pnl/run-attribution
+```
+
+### 📊 Key API Endpoints
+
+- `GET /api/portfolio` - Portfolio overview with real Greeks
+- `GET /api/volatility/summary` - Real volatility analysis
+- `GET /api/factor/exposures` - Factor exposures
+- `GET /api/pnl/summary` - P&L attribution summary
+- `GET /api/charts/pnl-attribution` - Real P&L charts
 
 ## Configuration
 
