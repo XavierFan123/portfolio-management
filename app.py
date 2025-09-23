@@ -23,10 +23,8 @@ from dataclasses import dataclass
 try:
     from numba import jit, vectorize, float64
     NUMBA_AVAILABLE = True
-    logger.info("Numba JIT acceleration available")
 except ImportError:
     NUMBA_AVAILABLE = False
-    logger.warning("Numba not available, using standard Python functions")
     # Define dummy jit decorator for fallback
     def jit(*args, **kwargs):
         def decorator(func):
@@ -48,6 +46,12 @@ def after_request(response):
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Log Numba availability after logger is initialized
+if NUMBA_AVAILABLE:
+    logger.info("Numba JIT acceleration available")
+else:
+    logger.warning("Numba not available, using standard Python functions")
 
 class OptionStyle(Enum):
     """期权类型枚举"""
