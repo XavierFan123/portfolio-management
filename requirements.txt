@@ -1,6 +1,7 @@
 numpy>=1.24.0
 pandas>=2.0.0
 scipy>=1.10.0
+numba>=0.56.0
 yfinance>=0.2.18
 aiohttp>=3.8.0
 asyncio-mqtt>=0.13.0

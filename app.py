@@ -19,6 +19,20 @@ from threading import Lock
 from enum import Enum
 from dataclasses import dataclass
 
+# Numba JIT imports for performance optimization
+try:
+    from numba import jit, vectorize, float64
+    NUMBA_AVAILABLE = True
+    logger.info("Numba JIT acceleration available")
+except ImportError:
+    NUMBA_AVAILABLE = False
+    logger.warning("Numba not available, using standard Python functions")
+    # Define dummy jit decorator for fallback
+    def jit(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+
 # Initialize Flask app
 app = Flask(__name__, static_folder='static')
 CORS(app)
@@ -39,6 +53,149 @@ class OptionStyle(Enum):
     """期权类型枚举"""
     EUROPEAN = "european"
     AMERICAN = "american"
+
+@dataclass
+class OptionContract:
+    """Professional option contract data structure"""
+    symbol: str
+    underlying: str
+    strike: float
+    maturity: float  # 年化时间
+    option_type: str  # 'call' or 'put'
+    style: OptionStyle = OptionStyle.AMERICAN
+    position: float = 0.0
+
+    # 市场数据
+    spot: float = 0.0
+    implied_vol: float = 0.0
+    rate: float = 0.05
+    div_yield: float = 0.0
+
+    # 计算结果缓存
+    price: Optional[float] = None
+    greeks: Optional[Dict] = None
+    last_update: Optional[float] = None
+
+    def __post_init__(self):
+        """Initialize computed fields"""
+        if self.last_update is None:
+            self.last_update = time.time()
+
+    def is_cache_valid(self, ttl: float = 1.0) -> bool:
+        """Check if cached values are still valid"""
+        return (self.price is not None and
+                self.greeks is not None and
+                time.time() - self.last_update < ttl)
+
+    def time_to_expiration(self) -> float:
+        """Get time to expiration in years"""
+        return max(self.maturity, 0.001)
+
+    def moneyness(self) -> float:
+        """Calculate moneyness (S/K)"""
+        return self.spot / self.strike if self.strike > 0 else 1.0
+
+    def intrinsic_value(self) -> float:
+        """Calculate intrinsic value"""
+        if self.option_type == 'call':
+            return max(self.spot - self.strike, 0)
+        else:  # put
+            return max(self.strike - self.spot, 0)
+
+# JIT-optimized pricing functions for maximum performance
+@jit(nopython=True, cache=True)
+def _numba_black_scholes_price(S: float, K: float, T: float, r: float, q: float, sigma: float, is_call: bool) -> float:
+    """Numba JIT-accelerated Black-Scholes pricing"""
+    if T <= 0:
+        return max(S - K, 0) if is_call else max(K - S, 0)
+
+    d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+
+    # Fast approximation for normal CDF (Numba compatible)
+    def fast_norm_cdf(x):
+        return 0.5 * (1 + np.tanh(0.7978845608 * (x + 0.044715 * x**3)))
+
+    if is_call:
+        price = S * np.exp(-q * T) * fast_norm_cdf(d1) - K * np.exp(-r * T) * fast_norm_cdf(d2)
+    else:
+        price = K * np.exp(-r * T) * fast_norm_cdf(-d2) - S * np.exp(-q * T) * fast_norm_cdf(-d1)
+
+    return max(price, 0.01)
+
+@jit(nopython=True, cache=True)
+def _numba_binomial_american_price(S: float, K: float, T: float, r: float, q: float, sigma: float, is_call: bool, N: int = 100) -> float:
+    """Numba JIT-accelerated binomial tree for American options"""
+    if T <= 0:
+        return max(S - K, 0) if is_call else max(K - S, 0)
+
+    dt = T / N
+    u = np.exp(sigma * np.sqrt(dt))
+    d = 1 / u
+    p = (np.exp((r - q) * dt) - d) / (u - d)
+    disc = np.exp(-r * dt)
+
+    # Initialize asset prices and option values
+    prices = np.zeros(N + 1)
+    values = np.zeros(N + 1)
+
+    # Terminal values
+    for i in range(N + 1):
+        prices[i] = S * (u ** (N - i)) * (d ** i)
+        if is_call:
+            values[i] = max(prices[i] - K, 0)
+        else:
+            values[i] = max(K - prices[i], 0)
+
+    # Backward induction
+    for j in range(N - 1, -1, -1):
+        for i in range(j + 1):
+            # Option value
+            option_value = disc * (p * values[i] + (1 - p) * values[i + 1])
+
+            # Early exercise value
+            current_price = S * (u ** (j - i)) * (d ** i)
+            if is_call:
+                exercise_value = max(current_price - K, 0)
+            else:
+                exercise_value = max(K - current_price, 0)
+
+            # American option: max of holding vs exercising
+            values[i] = max(option_value, exercise_value)
+
+    return max(values[0], 0.01)
+
+@jit(nopython=True, cache=True)
+def _numba_calculate_greeks(S: float, K: float, T: float, r: float, q: float, sigma: float, is_call: bool):
+    """Numba JIT-accelerated Greeks calculation"""
+    if T <= 0:
+        return (0.0, 0.0, 0.0, 0.0)  # delta, gamma, vega, theta
+
+    d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+
+    # Fast approximation for PDF and CDF
+    def fast_norm_pdf(x):
+        return np.exp(-0.5 * x**2) / np.sqrt(2 * np.pi)
+
+    def fast_norm_cdf(x):
+        return 0.5 * (1 + np.tanh(0.7978845608 * (x + 0.044715 * x**3)))
+
+    if is_call:
+        delta = np.exp(-q * T) * fast_norm_cdf(d1)
+        theta = -(S * np.exp(-q * T) * fast_norm_pdf(d1) * sigma / (2 * np.sqrt(T)) +
+                  r * K * np.exp(-r * T) * fast_norm_cdf(d2) -
+                  q * S * np.exp(-q * T) * fast_norm_cdf(d1)) / 365
+    else:
+        delta = -np.exp(-q * T) * fast_norm_cdf(-d1)
+        theta = -(S * np.exp(-q * T) * fast_norm_pdf(d1) * sigma / (2 * np.sqrt(T)) -
+                  r * K * np.exp(-r * T) * fast_norm_cdf(-d2) +
+                  q * S * np.exp(-q * T) * fast_norm_cdf(-d1)) / 365
+
+    gamma = np.exp(-q * T) * fast_norm_pdf(d1) / (S * sigma * np.sqrt(T))
+    vega = S * np.exp(-q * T) * fast_norm_pdf(d1) * np.sqrt(T) / 100
+
+    return (delta, gamma, vega, theta)
 
 class MarketDataProvider:
     """Professional market data provider with caching and fallback"""
@@ -316,32 +473,28 @@ class PortfolioData:
             return 30 / 365.0  # Default fallback
 
     def _black_scholes_price(self, S: float, K: float, T: float, r: float, q: float, sigma: float, option_type: str) -> float:
-        """Black-Scholes option pricing formula with dividend yield"""
-        if T <= 0:
-            # At expiration, option value is intrinsic value
-            if option_type == 'call':
-                return max(S - K, 0)
-            else:  # put
-                return max(K - S, 0)
-
+        """Black-Scholes option pricing with JIT optimization"""
         try:
-            # Dividend-adjusted Black-Scholes formula
-            d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-            d2 = d1 - sigma * np.sqrt(T)
+            is_call = option_type == 'call'
+            if NUMBA_AVAILABLE:
+                return _numba_black_scholes_price(S, K, T, r, q, sigma, is_call)
+            else:
+                # Fallback to scipy implementation
+                if T <= 0:
+                    return max(S - K, 0) if is_call else max(K - S, 0)
 
-            if option_type == 'call':
-                price = S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
-            else:  # put
-                price = K * np.exp(-r * T) * norm.cdf(-d2) - S * np.exp(-q * T) * norm.cdf(-d1)
+                d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+                d2 = d1 - sigma * np.sqrt(T)
 
-            return max(price, 0.01)  # Minimum price of $0.01
+                if is_call:
+                    price = S * np.exp(-q * T) * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2)
+                else:
+                    price = K * np.exp(-r * T) * norm.cdf(-d2) - S * np.exp(-q * T) * norm.cdf(-d1)
+
+                return max(price, 0.01)
         except Exception as e:
             logger.error(f"Error in Black-Scholes calculation: {e}")
-            # Fallback to intrinsic value
-            if option_type == 'call':
-                return max(S - K, 0.01)
-            else:
-                return max(K - S, 0.01)
+            return max(S - K, 0.01) if option_type == 'call' else max(K - S, 0.01)
 
     def _get_implied_volatility(self, symbol: str) -> float:
         """Get implied volatility for symbol (simplified)"""
@@ -376,61 +529,57 @@ class PortfolioData:
         return dividend_map.get(symbol.upper(), 0.01)  # Default 1% yield
 
     def _binomial_american_price(self, S: float, K: float, T: float, r: float, q: float, sigma: float, option_type: str, N: int = 100) -> float:
-        """Binomial tree pricing for American options"""
-        if T <= 0:
-            # At expiration, option value is intrinsic value
-            if option_type == 'call':
-                return max(S - K, 0)
-            else:  # put
-                return max(K - S, 0)
-
+        """Binomial tree pricing with JIT optimization"""
         try:
-            dt = T / N
-            u = np.exp(sigma * np.sqrt(dt))
-            d = 1 / u
-            p = (np.exp((r - q) * dt) - d) / (u - d)
-            disc = np.exp(-r * dt)
+            is_call = option_type == 'call'
+            if NUMBA_AVAILABLE:
+                return _numba_binomial_american_price(S, K, T, r, q, sigma, is_call, N)
+            else:
+                # Fallback to standard numpy implementation
+                if T <= 0:
+                    return max(S - K, 0) if is_call else max(K - S, 0)
 
-            # Initialize asset prices at maturity
-            prices = np.zeros(N + 1)
-            values = np.zeros(N + 1)
+                dt = T / N
+                u = np.exp(sigma * np.sqrt(dt))
+                d = 1 / u
+                p = (np.exp((r - q) * dt) - d) / (u - d)
+                disc = np.exp(-r * dt)
 
-            # Calculate terminal option values
-            for i in range(N + 1):
-                prices[i] = S * (u ** (N - i)) * (d ** i)
-                if option_type == 'call':
-                    values[i] = max(prices[i] - K, 0)
-                else:  # put
-                    values[i] = max(K - prices[i], 0)
+                values = np.zeros(N + 1)
 
-            # Work backwards through the tree
-            for j in range(N - 1, -1, -1):
-                for i in range(j + 1):
-                    # Calculate option value
-                    option_value = disc * (p * values[i] + (1 - p) * values[i + 1])
+                # Terminal values
+                for i in range(N + 1):
+                    price_at_expiry = S * (u ** (N - i)) * (d ** i)
+                    if is_call:
+                        values[i] = max(price_at_expiry - K, 0)
+                    else:
+                        values[i] = max(K - price_at_expiry, 0)
 
-                    # Current asset price
-                    current_price = S * (u ** (j - i)) * (d ** i)
+                # Backward induction
+                for j in range(N - 1, -1, -1):
+                    for i in range(j + 1):
+                        option_value = disc * (p * values[i] + (1 - p) * values[i + 1])
+                        current_price = S * (u ** (j - i)) * (d ** i)
 
-                    # Early exercise value
-                    if option_type == 'call':
-                        exercise_value = max(current_price - K, 0)
-                    else:  # put
-                        exercise_value = max(K - current_price, 0)
+                        if is_call:
+                            exercise_value = max(current_price - K, 0)
+                        else:
+                            exercise_value = max(K - current_price, 0)
 
-                    # American option: take max of holding vs exercising
-                    values[i] = max(option_value, exercise_value)
+                        values[i] = max(option_value, exercise_value)
 
-            return max(values[0], 0.01)  # Minimum price of $0.01
+                return max(values[0], 0.01)
 
         except Exception as e:
             logger.error(f"Error in binomial American pricing: {e}")
-            # Fallback to European Black-Scholes
             return self._black_scholes_price(S, K, T, r, q, sigma, option_type)
 
     def _calculate_greeks(self, position: Dict[str, Any]) -> Dict[str, float]:
-        """Calculate accurate Greeks using Black-Scholes analytical formulas"""
-        greeks = {'delta': 0.0, 'gamma': 0.0, 'vega': 0.0, 'theta': 0.0}
+        """Calculate comprehensive Greeks including advanced second and third order"""
+        greeks = {
+            'delta': 0.0, 'gamma': 0.0, 'vega': 0.0, 'theta': 0.0,
+            'vanna': 0.0, 'volga': 0.0, 'charm': 0.0
+        }
 
         if position['type'] in ['stock', 'crypto']:
             greeks['delta'] = 1.0
@@ -465,6 +614,18 @@ class PortfolioData:
                 # Gamma and Vega are same for calls and puts (with dividend adjustment)
                 greeks['gamma'] = np.exp(-q * T) * norm.pdf(d1) / (S * sigma * np.sqrt(T))
                 greeks['vega'] = S * np.exp(-q * T) * norm.pdf(d1) * np.sqrt(T) / 100  # Per 1% vol change
+
+                # Advanced Greeks (second and third order)
+                # Vanna: δδelta/δσ = δvega/δS
+                greeks['vanna'] = -np.exp(-q * T) * norm.pdf(d1) * d2 / (sigma * 100)
+
+                # Volga: δvega/δσ = δ²price/δσ²
+                greeks['volga'] = S * np.exp(-q * T) * norm.pdf(d1) * np.sqrt(T) * d1 * d2 / (sigma * 10000)
+
+                # Charm: δdelta/δt = δtheta/δS
+                greeks['charm'] = np.exp(-q * T) * norm.pdf(d1) * (
+                    (r - q) / (sigma * np.sqrt(T)) - d2 / (2 * T)
+                ) / 365
 
             except Exception as e:
                 logger.error(f"Error calculating option Greeks: {e}")

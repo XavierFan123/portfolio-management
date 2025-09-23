@@ -5,6 +5,8 @@ class PortfolioApp {
         this.charts = {};
         this.monitoringInterval = null;
         this.websocket = null;
+        this.lastDashboardData = null;
+        this.dataCache = new Map();
         this.init();
     }
 
@@ -402,12 +404,11 @@ class PortfolioApp {
 
     async updateDashboard() {
         try {
-            // Simulate API call to get dashboard data
             const response = await fetch('/api/dashboard');
             const data = await response.json();
 
             if (data.status === 'success') {
-                // Update metrics
+                // Update metrics with real data
                 const portfolioValueEl = document.getElementById('portfolio-value');
                 const varValueEl = document.getElementById('var-value');
                 const deltaValueEl = document.getElementById('delta-value');
@@ -415,21 +416,34 @@ class PortfolioApp {
 
                 if (portfolioValueEl) portfolioValueEl.textContent = '$' + data.portfolioValue.toLocaleString();
                 if (varValueEl) varValueEl.textContent = '$' + data.var.toLocaleString();
-                if (deltaValueEl) deltaValueEl.textContent = data.delta.toFixed(2);
-                if (gammaValueEl) gammaValueEl.textContent = data.gamma.toFixed(2);
+                if (deltaValueEl) deltaValueEl.textContent = data.delta.toFixed(3);
+                if (gammaValueEl) gammaValueEl.textContent = data.gamma.toFixed(3);
+
+                // Cache the data to prevent inconsistencies
+                this.lastDashboardData = data;
+                console.log('Dashboard updated with real data:', data);
+            } else {
+                console.error('Dashboard API returned error:', data.message);
+                this.showNotification('Error loading dashboard data', 'error');
             }
         } catch (error) {
-            console.log('Using demo data for dashboard');
-            // Use demo data if API is not available
-            const portfolioValueEl = document.getElementById('portfolio-value');
-            const varValueEl = document.getElementById('var-value');
-            const deltaValueEl = document.getElementById('delta-value');
-            const gammaValueEl = document.getElementById('gamma-value');
+            console.error('Dashboard API failed:', error);
+            this.showNotification('Network error loading dashboard', 'error');
 
-            if (portfolioValueEl) portfolioValueEl.textContent = '$125,420.50';
-            if (varValueEl) varValueEl.textContent = '$3,245.80';
-            if (deltaValueEl) deltaValueEl.textContent = '0.42';
-            if (gammaValueEl) gammaValueEl.textContent = '0.12';
+            // Only use cached data if available, no fallback demo data
+            if (this.lastDashboardData) {
+                console.log('Using cached dashboard data');
+                const data = this.lastDashboardData;
+                const portfolioValueEl = document.getElementById('portfolio-value');
+                const varValueEl = document.getElementById('var-value');
+                const deltaValueEl = document.getElementById('delta-value');
+                const gammaValueEl = document.getElementById('gamma-value');
+
+                if (portfolioValueEl) portfolioValueEl.textContent = '$' + data.portfolioValue.toLocaleString();
+                if (varValueEl) varValueEl.textContent = '$' + data.var.toLocaleString();
+                if (deltaValueEl) deltaValueEl.textContent = data.delta.toFixed(3);
+                if (gammaValueEl) gammaValueEl.textContent = data.gamma.toFixed(3);
+            }
         }
     }
 
