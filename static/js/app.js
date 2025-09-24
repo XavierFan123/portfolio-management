@@ -611,17 +611,17 @@ class PortfolioApp {
                 // Add new datasets if they exist
                 if (data.datasets && data.datasets.length > 0) {
                     data.datasets.forEach((dataset, index) => {
-                        if (this.charts.ivSurface.data.datasets[index]) {
-                            this.charts.ivSurface.data.datasets[index].data = dataset.data;
-                        } else {
-                            this.charts.ivSurface.data.datasets.push({
-                                label: dataset.label,
-                                data: dataset.data,
-                                borderColor: `hsl(${index * 120}, 70%, 50%)`,
-                                backgroundColor: `hsla(${index * 120}, 70%, 50%, 0.1)`,
-                                fill: false
-                            });
-                        }
+                        this.charts.ivSurface.data.datasets.push({
+                            label: dataset.label,
+                            data: dataset.data,
+                            borderColor: dataset.borderColor || `hsl(${index * 120}, 70%, 50%)`,
+                            backgroundColor: dataset.backgroundColor || `hsla(${index * 120}, 70%, 50%, 0.1)`,
+                            fill: dataset.fill !== undefined ? dataset.fill : false,
+                            tension: dataset.tension || 0.4,
+                            borderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        });
                     });
                 } else {
                     // No data available - show message
