@@ -548,10 +548,21 @@ class PortfolioApp {
             const response = await fetch('/api/charts/greeks-overview');
             const data = await response.json();
 
-            if (data.status === 'success' && this.charts.greeksOverview) {
-                this.charts.greeksOverview.data.labels = data.labels;
-                this.charts.greeksOverview.data.datasets[0].data = data.datasets[0].data;
-                this.charts.greeksOverview.data.datasets[1].data = data.datasets[1].data;
+            if (data.status === 'success' && this.charts.greeksOverview && data.datasets) {
+                this.charts.greeksOverview.data.labels = data.labels || [];
+
+                // Find Delta and Gamma datasets
+                const deltaDataset = data.datasets.find(d => d.label === 'Portfolio Delta');
+                const gammaDataset = data.datasets.find(d => d.label === 'Portfolio Gamma');
+
+                if (deltaDataset && this.charts.greeksOverview.data.datasets[0]) {
+                    this.charts.greeksOverview.data.datasets[0].data = deltaDataset.data || [];
+                }
+
+                if (gammaDataset && this.charts.greeksOverview.data.datasets[1]) {
+                    this.charts.greeksOverview.data.datasets[1].data = gammaDataset.data || [];
+                }
+
                 this.charts.greeksOverview.update();
             }
         } catch (error) {
@@ -564,10 +575,21 @@ class PortfolioApp {
             const response = await fetch('/api/charts/mstr-btc');
             const data = await response.json();
 
-            if (data.status === 'success' && this.charts.mstrBTC) {
-                this.charts.mstrBTC.data.labels = data.labels;
-                this.charts.mstrBTC.data.datasets[0].data = data.datasets[0].data;
-                this.charts.mstrBTC.data.datasets[1].data = data.datasets[1].data;
+            if (data.status === 'success' && this.charts.mstrBTC && data.datasets) {
+                this.charts.mstrBTC.data.labels = data.labels || [];
+
+                // Find MSTR/BTC ratio and correlation datasets
+                const ratioDataset = data.datasets.find(d => d.label === 'MSTR/BTC Ratio');
+                const correlationDataset = data.datasets.find(d => d.label === '30-Day Correlation');
+
+                if (ratioDataset && this.charts.mstrBTC.data.datasets[0]) {
+                    this.charts.mstrBTC.data.datasets[0].data = ratioDataset.data || [];
+                }
+
+                if (correlationDataset && this.charts.mstrBTC.data.datasets[1]) {
+                    this.charts.mstrBTC.data.datasets[1].data = correlationDataset.data || [];
+                }
+
                 this.charts.mstrBTC.update();
             }
         } catch (error) {
@@ -582,9 +604,30 @@ class PortfolioApp {
 
             if (data.status === 'success' && this.charts.ivSurface) {
                 this.charts.ivSurface.data.labels = data.labels;
-                this.charts.ivSurface.data.datasets[0].data = data.datasets[0].data;
-                this.charts.ivSurface.data.datasets[1].data = data.datasets[1].data;
-                this.charts.ivSurface.data.datasets[2].data = data.datasets[2].data;
+
+                // Clear existing datasets
+                this.charts.ivSurface.data.datasets = [];
+
+                // Add new datasets if they exist
+                if (data.datasets && data.datasets.length > 0) {
+                    data.datasets.forEach((dataset, index) => {
+                        if (this.charts.ivSurface.data.datasets[index]) {
+                            this.charts.ivSurface.data.datasets[index].data = dataset.data;
+                        } else {
+                            this.charts.ivSurface.data.datasets.push({
+                                label: dataset.label,
+                                data: dataset.data,
+                                borderColor: `hsl(${index * 120}, 70%, 50%)`,
+                                backgroundColor: `hsla(${index * 120}, 70%, 50%, 0.1)`,
+                                fill: false
+                            });
+                        }
+                    });
+                } else {
+                    // No data available - show message
+                    console.log('No IV surface data available');
+                }
+
                 this.charts.ivSurface.update();
             }
         } catch (error) {
@@ -596,6 +639,26 @@ class PortfolioApp {
         try {
             const response = await fetch('/api/charts/pnl-attribution');
             const data = await response.json();
+
+            if (data.status === 'success' && this.charts.pnlAttribution && data.datasets) {
+                this.charts.pnlAttribution.data.labels = data.labels || [];
+
+                // Map the datasets to the chart
+                const greeksTypes = ['Delta P&L', 'Gamma P&L', 'Theta P&L', 'Vega P&L'];
+
+                greeksTypes.forEach((greekType, index) => {
+                    const dataset = data.datasets.find(d => d.label === greekType);
+                    if (dataset && this.charts.pnlAttribution.data.datasets[index]) {
+                        this.charts.pnlAttribution.data.datasets[index].data = dataset.data || [];
+                    }
+                });
+
+                this.charts.pnlAttribution.update();
+            }
+        } catch (error) {
+            console.error('Error loading P&L attribution data:', error);
+        }
+    }
 
             if (data.status === 'success' && this.charts.pnlAttribution) {
                 this.charts.pnlAttribution.data.labels = data.labels;

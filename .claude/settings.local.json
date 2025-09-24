@@ -7,7 +7,15 @@
       "Bash(git --version)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(pip install:*)",
+      "Bash(start index.html)",
+      "Bash(curl:*)",
+      "Bash(taskkill:*)",
+      "Bash(sqlite3:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(set PORT=5001)"
     ],
     "deny": [],
     "ask": []

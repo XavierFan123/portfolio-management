@@ -1592,7 +1592,7 @@ def get_pnl_attribution():
             start_date = today - timedelta(days=7)
             summary = real_pnl_attributor.get_portfolio_pnl_summary(start_date, today)
 
-            if summary and 'total_pnl' in summary:
+            if summary and 'total_pnl' in summary and summary.get('total_pnl') is not None:
                 # Format for chart display
                 return jsonify({
                     'labels': [f'{i+1}d' for i in range(7)],
