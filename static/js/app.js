@@ -660,19 +660,6 @@ class PortfolioApp {
         }
     }
 
-            if (data.status === 'success' && this.charts.pnlAttribution) {
-                this.charts.pnlAttribution.data.labels = data.labels;
-                this.charts.pnlAttribution.data.datasets[0].data = data.datasets[0].data;
-                this.charts.pnlAttribution.data.datasets[1].data = data.datasets[1].data;
-                this.charts.pnlAttribution.data.datasets[2].data = data.datasets[2].data;
-                this.charts.pnlAttribution.data.datasets[3].data = data.datasets[3].data;
-                this.charts.pnlAttribution.update();
-            }
-        } catch (error) {
-            console.error('Error loading P&L attribution data:', error);
-        }
-    }
-
     // Method to refresh all chart data
     refreshChartData() {
         if (this.currentSection === 'dashboard') {
